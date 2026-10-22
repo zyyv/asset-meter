@@ -1,0 +1,355 @@
+{
+  "name": "vscode-asset-size",
+  "packageManager": "pnpm@11.25.0",
+  "displayName": "Asset Size",
+  "description": "Show file sizes and folder counts in Explorer, and compress images locally with a visual comparison before saving.",
+  "version": "0.3.0",
+  "publisher": "local-assets",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zyyv/vscode-assets-size.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "size",
+    "assets",
+    "explorer",
+    "folder",
+    "file count"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "assetSize.refresh",
+        "title": "Asset Size: Refresh Sizes",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "assetSize.toggleDisplayMode",
+        "title": "Asset Size: Toggle Always / Hover",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "assetSize.openSettings",
+        "title": "Asset Size: Open Settings",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "assetSize.compressImage",
+        "title": "Asset Size: Compress Image",
+        "icon": "$(fold)"
+      },
+      {
+        "command": "assetSize.installNativePatch",
+        "title": "Asset Size: Install / Reapply Native Explorer Patch"
+      },
+      {
+        "command": "assetSize.restoreNativePatch",
+        "title": "Asset Size: Restore Native Explorer Patch"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "assetSize.refresh",
+          "group": "7_modification@90"
+        },
+        {
+          "command": "assetSize.compressImage",
+          "when": "resourceExtname =~ /\\.(jpe?g|jpe|png|webp)$/i",
+          "group": "7_modification@91"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "assetSize.compressImage",
+          "when": "activeCustomEditorId == 'imagePreview.previewEditor' && resourceExtname =~ /\\.(jpe?g|jpe|png|webp)$/i",
+          "group": "navigation@10"
+        }
+      ]
+    },
+    "colors": [
+      {
+        "id": "assetSize.sizeWarning",
+        "description": "Yellow size text for resources above the warning threshold.",
+        "defaults": {
+          "dark": "#D7BA7D",
+          "light": "#946800",
+          "highContrast": "#FFFF00",
+          "highContrastLight": "#795E00"
+        }
+      },
+      {
+        "id": "assetSize.sizeLarge",
+        "description": "Orange size text for large resources.",
+        "defaults": {
+          "dark": "#F0883E",
+          "light": "#BC4C00",
+          "highContrast": "#FFAA33",
+          "highContrastLight": "#A63A00"
+        }
+      },
+      {
+        "id": "assetSize.sizeCritical",
+        "description": "Red size text for very large resources.",
+        "defaults": {
+          "dark": "#F85149",
+          "light": "#CF222E",
+          "highContrast": "#FF6666",
+          "highContrastLight": "#B00020"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Asset Size",
+      "properties": {
+        "assetSize.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable size calculations and decorations."
+        },
+        "assetSize.displayMode": {
+          "type": "string",
+          "enum": [
+            "always",
+            "hover"
+          ],
+          "enumDescriptions": [
+            "Show file counts followed by full sizes in Explorer. Requires the native Explorer patch.",
+            "Show details only in the Explorer hover tooltip."
+          ],
+          "default": "always",
+          "scope": "resource",
+          "description": "Choose when size information is shown."
+        },
+        "assetSize.fileExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "scope": "resource",
+          "default": [
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".webp",
+            ".avif",
+            ".svg",
+            ".ico",
+            ".bmp",
+            ".heic",
+            ".mp4",
+            ".webm",
+            ".mov",
+            ".mp3",
+            ".wav",
+            ".ogg",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".otf",
+            ".pdf",
+            ".zip"
+          ],
+          "description": "File extensions to decorate (case-insensitive). The leading dot is optional; compound extensions such as .tar.gz are supported. Use * for all files. Does not limit folder totals."
+        },
+        "assetSize.folderNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "scope": "resource",
+          "default": [
+            "assets",
+            "public",
+            "static",
+            "images",
+            "img",
+            "media",
+            "fonts"
+          ],
+          "description": "Folder names to decorate at any depth (case-insensitive). Use * for all folders."
+        },
+        "assetSize.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "scope": "resource",
+          "default": [
+            "**/.git/**",
+            "**/node_modules/**",
+            "**/.svn/**",
+            "**/.hg/**",
+            "**/.DS_Store"
+          ],
+          "description": "Workspace-relative glob exclusions. Matching resources are excluded from decorations and totals. Supports **, * and braces."
+        },
+        "assetSize.showFileCount": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Show folder file counts before the size."
+        },
+        "assetSize.fileCountMode": {
+          "type": "string",
+          "enum": [
+            "recursive",
+            "direct"
+          ],
+          "default": "recursive",
+          "scope": "resource",
+          "description": "Count all descendant files (recursive) or immediate child files (direct). Sizes always include descendants."
+        },
+        "assetSize.units": {
+          "type": "string",
+          "enum": [
+            "binary",
+            "decimal"
+          ],
+          "enumDescriptions": [
+            "Base 1024: KiB / MiB / GiB",
+            "Base 1000: KB / MB / GB"
+          ],
+          "default": "decimal",
+          "scope": "resource",
+          "description": "Size display units."
+        },
+        "assetSize.decimalPlaces": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "default": 1,
+          "scope": "resource",
+          "description": "Number of decimal places for sizes."
+        },
+        "assetSize.colorize": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Color only the trailing size text by severity. Filenames and file counts keep their original colors."
+        },
+        "assetSize.fileColorThresholdsMiB": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "default": [
+            0.25,
+            1,
+            5
+          ],
+          "scope": "resource",
+          "description": "Yellow, orange and red file-size thresholds in MiB (1024 squared bytes). Values are sorted in ascending order."
+        },
+        "assetSize.folderColorThresholdsMiB": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "default": [
+            10,
+            50,
+            100
+          ],
+          "scope": "resource",
+          "description": "Yellow, orange and red folder-size thresholds in MiB. Values are sorted in ascending order."
+        },
+        "assetSize.refreshDelay": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000,
+          "default": 400,
+          "description": "Delay in milliseconds for batching filesystem updates."
+        },
+        "assetSize.compression.quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 75,
+          "scope": "resource",
+          "description": "JPEG and WebP compression quality. PNG compression is lossless and ignores this setting."
+        },
+        "assetSize.compression.saveBehavior": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "saveAs",
+            "overwrite"
+          ],
+          "enumDescriptions": [
+            "Ask for Save As or Overwrite, with Allow Once or Always Allow.",
+            "Always open Save As after clicking Save Result in the comparison.",
+            "Always overwrite the original after clicking Save Result in the comparison."
+          ],
+          "default": "ask",
+          "scope": "application",
+          "description": "Remembered save permission. Comparison is always shown before saving. Set to ask to reset Always Allow. Only User Settings can grant this permission."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/prepare-build.mjs && tsdown",
+    "watch": "node scripts/prepare-build.mjs && tsdown --watch",
+    "check": "tsc --noEmit",
+    "lint": "eslint src test scripts eslint.config.mjs tsdown.config.mjs",
+    "lint:fix": "pnpm lint --fix",
+    "test": "pnpm build && node --import tsx --test test/core.test.ts test/nativePatch.test.ts test/compression.test.ts",
+    "test:integration": "pnpm build && node scripts/run-integration.mjs",
+    "test:ui": "node scripts/check-native-view.mjs",
+    "vscode:prepublish": "pnpm check && pnpm build",
+    "prepackage": "node -e \"require('node:fs').mkdirSync('artifacts', {recursive:true})\"",
+    "package": "vsce package --no-dependencies --out artifacts/asset-size-0.3.0.vsix",
+    "test:compression:ui": "pnpm build && node scripts/check-compression-view.mjs"
+  },
+  "dependencies": {
+    "@jsquash/jpeg": "^1.6.0",
+    "@jsquash/oxipng": "^2.3.0",
+    "@jsquash/webp": "^1.5.0",
+    "picomatch": "^4.0.3"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^9.5.1",
+    "@types/node": "^22.0.0",
+    "@types/picomatch": "^4.0.2",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^10.13.0",
+    "playwright": "^1.62.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "tsdown": "^0.23.1"
+  }
+}

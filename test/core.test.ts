@@ -1,0 +1,240 @@
+import type { FileStat, FileSystem, Settings } from '../src/core/types'
+import assert from 'node:assert/strict'
+import { posix } from 'node:path'
+import { it } from 'node:test'
+import { describeMetrics, fileCount, formatSize, inlineLabel } from '../src/core/format'
+import { ResourceMatcher } from '../src/core/matcher'
+import { ScanCancelled, SizeScanner } from '../src/core/scanner'
+import { sizeSeverity } from '../src/core/severity'
+import { FileKind } from '../src/core/types'
+
+const defaults: Settings = {
+  enabled: true,
+  displayMode: 'always',
+  fileExtensions: ['.png', '.jpg', '.tar.gz'],
+  folderNames: ['assets', 'public'],
+  exclude: ['**/node_modules/**', '**/.git/**', '**/*.tmp'],
+  showFileCount: true,
+  fileCountMode: 'recursive',
+  units: 'binary',
+  decimalPlaces: 1,
+  colorize: true,
+  fileColorThresholdsMiB: [0.25, 1, 5],
+  folderColorThresholdsMiB: [10, 50, 100],
+}
+
+class MemoryFs implements FileSystem {
+  readonly entries = new Map<string, FileStat>()
+  readonly failures = new Set<string>()
+  readonly calls = new Map<string, number>()
+  active = 0
+  maxActive = 0
+  beforeStat?: (key: string) => Promise<void>
+  constructor() { this.directory('/') }
+  directory(key: string): this { this.entries.set(key, { type: FileKind.Directory, size: 0 }); return this }
+  file(key: string, size: number): this { this.entries.set(key, { type: FileKind.File, size }); return this }
+  link(key: string): this { this.entries.set(key, { type: FileKind.Directory | FileKind.SymbolicLink, size: 0 }); return this }
+  async stat(key: string): Promise<FileStat> {
+    this.calls.set(key, (this.calls.get(key) ?? 0) + 1)
+    this.active++
+    this.maxActive = Math.max(this.maxActive, this.active)
+    try {
+      await this.beforeStat?.(key)
+      if (this.failures.has(key)) { throw new Error('Permission denied') }
+      const entry = this.entries.get(key)
+      if (!entry) { throw new Error('Not found') }
+      return { ...entry }
+    }
+    finally { this.active-- }
+  }
+
+  async readDirectory(key: string): Promise<[string, number][]> {
+    if (this.failures.has(key)) { throw new Error('Permission denied') }
+    return [...this.entries].filter(([path]) => path !== key && posix.dirname(path) === key).map(([path, stat]) => [posix.basename(path), stat.type])
+  }
+
+  join(key: string, name: string): string { return posix.join(key, name) }
+}
+
+function scanner(fs: MemoryFs): SizeScanner {
+  const matcher = new ResourceMatcher(defaults)
+  return new SizeScanner(fs, key => matcher.isExcluded(key.slice(1)))
+}
+
+it('resource rules match extensions and folder basenames without restricting aggregate contents', () => {
+  const matcher = new ResourceMatcher(defaults)
+  assert.equal(matcher.matches('LOGO.PNG', false), true)
+  assert.equal(matcher.matches('archive.tar.gz', false), true)
+  assert.equal(matcher.matches('readme.md', false), false)
+  assert.equal(matcher.matches('ASSETS', true), true)
+  assert.equal(matcher.matches('assets', false), false)
+  assert.equal(matcher.matches('src', true), false)
+  assert.equal(new ResourceMatcher({ ...defaults, fileExtensions: ['jpg'], folderNames: ['*'] }).matches('logo.JPG', false), true)
+  assert.equal(new ResourceMatcher({ ...defaults, fileExtensions: ['*'] }).matches('LICENSE', false), true)
+  assert.equal(new ResourceMatcher({ ...defaults, enabled: false }).matches('logo.png', false), false)
+})
+
+it('exclusions prune directory roots, descendants, dotfiles, Windows separators and brace globs', () => {
+  const matcher = new ResourceMatcher({ ...defaults, exclude: [...defaults.exclude, '**/{build,dist}/**'] })
+  for (const path of ['node_modules', 'node_modules/a.png', 'assets/node_modules/a', '.git', '.git/objects/a', 'assets\\node_modules\\x', 'assets/x.tmp', 'dist', 'src/build/x']) {
+    assert.equal(matcher.isExcluded(path), true, path)
+  }
+  for (const path of ['', 'assets/logo.png', 'assets/node_modules_backup/logo.png', '.github/workflows/ci.yml']) {
+    assert.equal(matcher.isExcluded(path), false, path)
+  }
+})
+
+it('folder totals include all file types, keep direct and recursive counts, skip symlink loops', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 1024).file('/assets/notes.txt', 7).directory('/assets/nested').file('/assets/nested/b.jpg', 2048).directory('/assets/node_modules').file('/assets/node_modules/large.png', 1_000_000).directory('/assets/.git').file('/assets/.git/large', 1_000_000).link('/assets/loop')
+  const result = await scanner(fs).measure('/assets')
+  assert.deepEqual(result, { bytes: 3079, files: 3, directFiles: 2, directories: 1, skipped: 1, errors: 0, isDirectory: true })
+  assert.equal(fs.calls.has('/assets/node_modules/large.png'), false)
+  assert.equal(fs.calls.has('/assets/loop'), false)
+})
+
+it('zero byte files and empty folders remain visible as zero', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/empty.png', 0)
+  const sizes = scanner(fs)
+  assert.equal((await sizes.measure('/assets')).bytes, 0)
+  assert.equal((await sizes.measure('/assets')).files, 0)
+  assert.equal((await sizes.measure('/empty.png')).files, 1)
+  assert.equal(formatSize(0), '0 B')
+})
+
+it('unreadable children produce partial totals instead of false complete totals', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 4).file('/assets/blocked.jpg', 20).directory('/assets/blocked').file('/assets/blocked/hidden.png', 40)
+  fs.failures.add('/assets/blocked.jpg')
+  fs.failures.add('/assets/blocked')
+  const metrics = await scanner(fs).measure('/assets')
+  assert.equal(metrics.bytes, 4)
+  assert.equal(metrics.files, 1)
+  assert.equal(metrics.errors, 2)
+  assert.match(describeMetrics(metrics, defaults), /≥ 4 B/)
+  assert.match(describeMetrics(metrics, defaults), /Unreadable items: 2/)
+})
+
+it('concurrent requests share one scan; changed descendants invalidate every cached ancestor', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 10).file('/other.png', 5)
+  const sizes = scanner(fs)
+  const [one, two] = await Promise.all([sizes.measure('/assets'), sizes.measure('/assets')])
+  assert.equal(one.bytes, two.bytes)
+  assert.equal(fs.calls.get('/assets'), 1)
+  await sizes.measure('/other.png')
+  fs.file('/assets/a.png', 30)
+  sizes.invalidate('/assets/a.png')
+  assert.equal((await sizes.measure('/assets')).bytes, 30)
+  assert.equal(fs.calls.get('/assets'), 2)
+  await sizes.measure('/other.png')
+  assert.equal(fs.calls.get('/other.png'), 1)
+  sizes.invalidate('/asset')
+  await sizes.measure('/assets')
+  assert.equal(fs.calls.get('/assets'), 2, 'path prefixes are not mistaken for ancestors')
+})
+
+it('deleting a directory drops cached descendants and full invalidation drops all entries', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 10)
+  const sizes = scanner(fs)
+  await sizes.measure('/assets/a.png')
+  sizes.invalidate('/assets')
+  fs.entries.delete('/assets/a.png')
+  await assert.rejects(sizes.measure('/assets/a.png'), /Not found/)
+  fs.file('/assets/a.png', 99)
+  assert.equal((await sizes.measure('/assets/a.png')).bytes, 99, 'a rejected read does not poison the cache')
+  sizes.invalidate()
+  await sizes.measure('/assets/a.png')
+  assert.equal(fs.calls.get('/assets/a.png'), 4)
+})
+
+it('in-flight scans cannot repopulate stale results after invalidation', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 10)
+  let release: () => void = () => {}
+  let started: () => void = () => {}
+  const entered = new Promise<void>((resolve) => { started = resolve })
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  fs.beforeStat = async (key) => { if (key === '/assets/a.png') { started(); await gate } }
+  const sizes = scanner(fs)
+  const scan = sizes.measure('/assets')
+  await entered
+  sizes.invalidate('/assets/a.png')
+  fs.file('/assets/a.png', 100)
+  release()
+  await assert.rejects(scan, ScanCancelled)
+  assert.equal((await sizes.measure('/assets')).bytes, 100)
+})
+
+it('i/O concurrency stays bounded across overlapping folder requests', async () => {
+  const fs = new MemoryFs().directory('/assets').directory('/public')
+  for (let index = 0; index < 160; index++) {
+    fs.file(`/assets/${index}.png`, 1).file(`/public/${index}.jpg`, 2)
+  }
+  fs.beforeStat = () => new Promise(resolve => setImmediate(resolve))
+  const sizes = scanner(fs)
+  const result = await Promise.all([sizes.measure('/assets'), sizes.measure('/public')])
+  assert.deepEqual(result.map(item => item.bytes), [160, 320])
+  assert.ok(fs.maxActive <= 16, `observed ${fs.maxActive} concurrent reads`)
+})
+
+it('bounded cache evicts old results without invalidating retained siblings', async () => {
+  const fs = new MemoryFs().file('/a.png', 1).file('/b.png', 2).file('/c.png', 3)
+  const sizes = new SizeScanner(fs, () => false, 2)
+  await sizes.measure('/a.png'); await sizes.measure('/b.png'); await sizes.measure('/c.png')
+  await sizes.measure('/b.png')
+  assert.equal(fs.calls.get('/b.png'), 1)
+  await sizes.measure('/a.png')
+  assert.equal(fs.calls.get('/a.png'), 2)
+})
+
+it('formatting uses complete, explicit binary and decimal units', () => {
+  assert.equal(formatSize(1536), '1.5 KiB')
+  assert.equal(formatSize(1500, 'decimal'), '1.5 KB')
+  assert.equal(formatSize(1024 ** 3, 'binary', 2), '1 GiB')
+})
+
+it('native labels show complete size and configurable folder counts without compact buckets', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 1536).directory('/assets/sub').file('/assets/sub/b.png', 512)
+  const metrics = await scanner(fs).measure('/assets')
+  assert.equal(inlineLabel(metrics, defaults), '2 files · 2 KiB')
+  assert.equal(inlineLabel(metrics, { ...defaults, fileCountMode: 'direct' }), '1 file · 2 KiB')
+  assert.equal(inlineLabel(metrics, { ...defaults, showFileCount: false }), '2 KiB')
+  assert.equal(inlineLabel(await scanner(fs).measure('/assets/a.png'), defaults), '1.5 KiB')
+})
+
+it('size colors escalate at each threshold and folders use their own scale', () => {
+  const MiB = 1024 ** 2
+  assert.equal(sizeSeverity(0.25 * MiB - 1, false, defaults), 'normal')
+  assert.equal(sizeSeverity(0.25 * MiB, false, defaults), 'warning')
+  assert.equal(sizeSeverity(MiB, false, defaults), 'large')
+  assert.equal(sizeSeverity(5 * MiB, false, defaults), 'critical')
+  assert.equal(sizeSeverity(5 * MiB, true, defaults), 'normal')
+  assert.equal(sizeSeverity(10 * MiB, true, defaults), 'warning')
+  assert.equal(sizeSeverity(50 * MiB, true, defaults), 'large')
+  assert.equal(sizeSeverity(100 * MiB, true, defaults), 'critical')
+  assert.equal(sizeSeverity(MiB, false, { ...defaults, fileColorThresholdsMiB: [5, 0.25, 1] }), 'large')
+  assert.equal(sizeSeverity(MiB, false, { ...defaults, fileColorThresholdsMiB: [NaN] }), 'large')
+})
+
+it('cache pressure retains in-flight requests so changed descendants still cancel them', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 1).file('/other.png', 2)
+  let release: () => void = () => {}
+  let started: () => void = () => {}
+  const entered = new Promise<void>((resolve) => { started = resolve })
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  fs.beforeStat = async (key) => { if (key === '/assets/a.png') { started(); await gate } }
+  const sizes = new SizeScanner(fs, () => false, 1)
+  const pending = sizes.measure('/assets')
+  await entered
+  await sizes.measure('/other.png')
+  sizes.invalidate('/assets/a.png')
+  release()
+  await assert.rejects(pending, ScanCancelled)
+})
+
+it('count setting changes count display while retaining recursive size', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 1).directory('/assets/sub').file('/assets/sub/b.png', 2)
+  const metrics = await scanner(fs).measure('/assets')
+  assert.equal(fileCount(metrics, defaults), 2)
+  assert.equal(fileCount(metrics, { ...defaults, fileCountMode: 'direct' }), 1)
+  assert.match(describeMetrics(metrics, { ...defaults, fileCountMode: 'direct' }), /Files: 1 \(direct children\)/)
+  assert.doesNotMatch(describeMetrics(metrics, { ...defaults, showFileCount: false }), /Files:/)
+  assert.equal(metrics.bytes, 3)
+})

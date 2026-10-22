@@ -1,0 +1,9 @@
+packages: []
+enableGlobalVirtualStore: false
+allowBuilds:
+  '@vscode/vsce-sign': true
+  esbuild: true
+  keytar: true
+overrides:
+  undici-types: 6.23.0
+trustPolicy: off

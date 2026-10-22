@@ -1,0 +1,1 @@
+This file is included in the folder's total bytes and file count, even though .txt does not display an individual size by default.
