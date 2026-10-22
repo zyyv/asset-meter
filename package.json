@@ -1,21 +1,15 @@
 {
-  "name": "vscode-asset-size",
-  "packageManager": "pnpm@11.25.0",
-  "displayName": "Asset Size",
-  "description": "Show file sizes and folder counts in Explorer, and compress images locally with a visual comparison before saving.",
-  "version": "0.3.0",
   "publisher": "local-assets",
+  "name": "vscode-asset-size",
+  "displayName": "Asset Size",
+  "version": "0.3.0",
+  "packageManager": "pnpm@12.14.0",
+  "description": "Show file sizes and folder counts in Explorer, and compress images locally with a visual comparison before saving.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zyyv/vscode-assets-size.git"
   },
-  "engines": {
-    "vscode": "^1.90.0"
-  },
-  "categories": [
-    "Other"
-  ],
   "keywords": [
     "size",
     "assets",
@@ -23,7 +17,13 @@
     "folder",
     "file count"
   ],
+  "categories": [
+    "Other"
+  ],
   "main": "./dist/extension.js",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
   "extensionKind": [
     "workspace"
   ],
@@ -337,20 +337,20 @@
     "@jsquash/jpeg": "^1.6.0",
     "@jsquash/oxipng": "^2.3.0",
     "@jsquash/webp": "^1.5.0",
-    "picomatch": "^4.0.3"
+    "picomatch": "^4.0.7"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^9.5.1",
-    "@types/node": "^22.0.0",
-    "@types/picomatch": "^4.0.2",
+    "@types/node": "^26.6.5",
+    "@types/picomatch": "^4.0.3",
     "@types/vscode": "1.90.0",
-    "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.6.0",
-    "esbuild": "^0.25.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
-    "playwright": "^1.62.1",
-    "tsx": "^4.20.0",
-    "typescript": "^5.9.0",
-    "tsdown": "^0.23.1"
+    "playwright": "^1.64.1",
+    "tsdown": "^0.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }
