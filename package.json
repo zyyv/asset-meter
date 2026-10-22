@@ -321,13 +321,14 @@
   "scripts": {
     "build": "node scripts/prepare-build.mjs && tsdown",
     "watch": "node scripts/prepare-build.mjs && tsdown --watch",
-    "check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck",
     "lint": "eslint src test scripts eslint.config.mjs tsdown.config.mjs",
     "lint:fix": "pnpm lint --fix",
     "test": "pnpm build && node --import tsx --test test/core.test.ts test/nativePatch.test.ts test/compression.test.ts",
     "test:integration": "pnpm build && node scripts/run-integration.mjs",
     "test:ui": "node scripts/check-native-view.mjs",
-    "vscode:prepublish": "pnpm check && pnpm build",
+    "vscode:prepublish": "pnpm typecheck && pnpm build",
     "prepackage": "node -e \"require('node:fs').mkdirSync('artifacts', {recursive:true})\"",
     "package": "vsce package --no-dependencies --out artifacts/asset-size-0.3.0.vsix",
     "test:compression:ui": "pnpm build && node scripts/check-compression-view.mjs"
