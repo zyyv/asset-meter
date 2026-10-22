@@ -26,7 +26,7 @@ export function startCompression(distDirectory: string, bytes: Uint8Array, forma
       if (message.error || !message.bytes?.length) { finish(new Error(message.error ?? 'The encoder returned an empty image.')) }
       else { finish(undefined, message.bytes) }
     })
-    worker.once('error', error => finish(error))
+    worker.once('error', error => finish(error instanceof Error ? error : new Error(String(error))))
     worker.once('exit', code => finish(new Error(`Image compression worker exited before returning an image (code ${code}).`)))
   })
   return { result, cancel: () => cancel() }
