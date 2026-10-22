@@ -67,7 +67,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => { watchWorkspace(); service.invalidate(undefined, true) }),
     vscode.commands.registerCommand('assetSize.refresh', () => { service.invalidate() }),
-    vscode.commands.registerCommand('assetSize.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:local-assets.vscode-asset-size')),
+    vscode.commands.registerCommand('assetSize.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
     vscode.commands.registerCommand('assetSize.installNativePatch', async () => {
       try {
         await installNativePatch(vscode.env.appRoot)
@@ -75,7 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
         if (action) { await vscode.commands.executeCommand('workbench.action.reloadWindow') }
       }
       catch (error) {
-        void vscode.window.showErrorMessage(`Asset Size patch installation failed: ${error instanceof Error ? error.message : String(error)}`)
+        void vscode.window.showErrorMessage(`Assets Size patch installation failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     }),
     vscode.commands.registerCommand('assetSize.restoreNativePatch', async () => {
@@ -85,7 +85,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
         if (action) { await vscode.commands.executeCommand('workbench.action.reloadWindow') }
       }
       catch (error) {
-        void vscode.window.showErrorMessage(`Asset Size patch restoration failed: ${error instanceof Error ? error.message : String(error)}`)
+        void vscode.window.showErrorMessage(`Assets Size patch restoration failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     }),
     vscode.commands.registerCommand('assetSize.toggleDisplayMode', async () => {
@@ -98,7 +98,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
           ? vscode.ConfigurationTarget.Workspace
           : vscode.ConfigurationTarget.Global
       await config.update('displayMode', mode, target)
-      vscode.window.setStatusBarMessage(`Asset Size: ${mode === 'always' ? 'Always show sizes' : 'Hover only'}`, 2500)
+      vscode.window.setStatusBarMessage(`Assets Size: ${mode === 'always' ? 'Always show sizes' : 'Hover only'}`, 2500)
     }),
     new vscode.Disposable(() => { if (timer) { clearTimeout(timer) } pending.clear() }),
   )

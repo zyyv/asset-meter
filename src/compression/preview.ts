@@ -53,7 +53,7 @@ export class ImageCompression implements vscode.Disposable {
     }
     catch (error) {
       if (error instanceof Error && error.message === 'Compression cancelled.') { return }
-      void vscode.window.showErrorMessage(`Asset Size compression failed: ${error instanceof Error ? error.message : String(error)}`)
+      void vscode.window.showErrorMessage(`Assets Size compression failed: ${error instanceof Error ? error.message : String(error)}`)
     }
     finally { this.pending.delete(key) }
   }
@@ -121,7 +121,7 @@ figure { margin: 0; min-width: 0; background: var(--vscode-editor-background); }
       catch (error) {
         const text = error instanceof Error ? error.message : String(error)
         await panel.webview.postMessage({ type: 'saveResult', saved: false, text })
-        void vscode.window.showErrorMessage(`Asset Size could not save the image: ${text}`)
+        void vscode.window.showErrorMessage(`Assets Size could not save the image: ${text}`)
       }
       finally { saving = false }
     })

@@ -1,12 +1,15 @@
 import type { AssetSizeApi } from '../src/extension'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import * as vscode from 'vscode'
 import { SizeDecorationProvider } from '../src/decorations'
 import { getNativePatchStatus } from '../src/nativePatch'
 import { SizeService } from '../src/service'
 
 export async function run(): Promise<void> {
-  const extension = vscode.extensions.getExtension<AssetSizeApi>('local-assets.vscode-asset-size')
+  const { publisher, name } = JSON.parse(await readFile(path.join(__dirname, '../package.json'), 'utf8'))
+  const extension = vscode.extensions.getExtension<AssetSizeApi>(`${publisher}.${name}`)
   assert.ok(extension, 'Extension is installed in the development host')
   const api = await extension.activate()
   const root = vscode.workspace.workspaceFolders?.[0]?.uri

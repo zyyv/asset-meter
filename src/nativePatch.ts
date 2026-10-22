@@ -49,7 +49,7 @@ function __assetSizeNativeBadgeV3(value) {
 `
 
 export function patchExtensionHost(source: string): string {
-  if (hasPatch(source)) { throw new Error('The extension host already contains an Asset Size patch.') }
+  if (hasPatch(source)) { throw new Error('The extension host already contains an Assets Size patch.') }
   // Keep VS Code's original validation for every other badge. Only our delimited,
   // plain-text numeric labels gain the larger limit; quotes/CSS are never accepted.
   const expression = /([\w$]+)\.badge\.length\s*>\s*([\w$]+)(?=\s*\)\s*throw new Error\("The 'badge'-property must be undefined or a short character"\))/g
@@ -63,7 +63,7 @@ export function patchExtensionHost(source: string): string {
 }
 
 export function patchWorkbench(source: string): string {
-  if (hasPatch(source)) { throw new Error('The workbench already contains an Asset Size patch.') }
+  if (hasPatch(source)) { throw new Error('The workbench already contains an Assets Size patch.') }
   const expression = /([\w$]+)\(`\.\$\{this\.itemBadgeClassName\}::after`,(`content: "\$\{([^}]+)\}"; color: \$\{[^}]+\};`),([\w$]+)\)/g
   let matches = 0
   const result = source.replace(expression, (_match, emit: string, content: string, value: string, sheet: string) => {
@@ -99,7 +99,7 @@ async function readManifest(appRoot: string): Promise<Manifest | undefined> {
     || !Array.isArray(manifest.files) || manifest.files.length !== targets.length
     || !manifest.files.every((file, index) => file.path === targets[index] && file.backup === `${index}.original`
       && /^[a-f0-9]{64}$/.test(file.originalHash) && /^[a-f0-9]{64}$/.test(file.patchedHash) && Number.isInteger(file.mode))) {
-    throw new Error('Invalid Asset Size backup manifest. Keep the backups and check the application directory.')
+    throw new Error('Invalid Assets Size backup manifest. Keep the backups and check the application directory.')
   }
   return manifest
 }
@@ -136,7 +136,7 @@ export async function installNativePatch(appRoot: string): Promise<PatchResult> 
     }))
   }
   if (originals.some(hasPatch)) {
-    throw new Error('An incomplete or modified Asset Size patch was detected. Run Restore Native Explorer Patch first and keep the backups.')
+    throw new Error('An incomplete or modified Assets Size patch was detected. Run Restore Native Explorer Patch first and keep the backups.')
   }
   // Build and validate the entire plan before touching any application file.
   const patched = [patchExtensionHost(originals[0]!), patchWorkbench(originals[1]!), `${originals[2]}${css}`]
@@ -211,7 +211,7 @@ async function atomicWrite(target: string, content: string, mode: number): Promi
   try { await writeFile(temporary, content, { flag: 'wx', mode }); await rename(temporary, target) }
   finally {
     try { await unlink(temporary) }
-    catch (error) { if (!isMissing(error)) { console.error('[Asset Size] Failed to remove a temporary patch file.', error) } }
+    catch (error) { if (!isMissing(error)) { console.error('[Assets Size] Failed to remove a temporary patch file.', error) } }
   }
 }
 

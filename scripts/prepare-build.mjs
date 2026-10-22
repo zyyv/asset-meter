@@ -6,6 +6,8 @@ const codecsDirectory = 'dist/codecs'
 
 await rm('dist', { recursive: true, force: true })
 await mkdir(codecsDirectory, { recursive: true })
+await mkdir('dist/licenses', { recursive: true })
+await copyFile(require.resolve('picomatch/LICENSE'), 'dist/licenses/LICENSE-picomatch')
 
 const codecFiles = [
   ['jpeg', 'codec/dec/mozjpeg_dec.wasm'],

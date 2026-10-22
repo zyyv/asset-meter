@@ -1,6 +1,28 @@
-# Asset Size
+<p align="center">
+  <img src="images/icon.png" width="96" height="96" alt="Assets Size logo">
+</p>
 
-Show folder file counts and complete file sizes directly in the native Explorer tree.
+<h1 align="center">Assets Size</h1>
+
+<p align="center">Know what your assets weigh. Make your images lighter.</p>
+
+<p align="center">
+  <a href="https://github.com/zyyv/vscode-assets-size">GitHub</a> ·
+  <a href="https://github.com/zyyv/vscode-assets-size/issues">Report an issue</a> ·
+  <a href="https://github.com/zyyv/vscode-assets-size/blob/main/README.zh-CN.md">简体中文</a>
+</p>
+
+See file sizes and folder counts where you already work: VS Code's Explorer. Find heavy assets, then compress JPEG, PNG and WebP images locally with a visual comparison before saving.
+
+**VS Code 1.90+ · Desktop extension · Local processing · MIT**
+
+## At a glance
+
+- **Sizes in Explorer.** Full file sizes and folder totals, with optional recursive or direct file counts.
+- **Useful color cues.** Configurable warning, large and critical thresholds on size text; filenames keep their theme and Git colors.
+- **Preview before saving.** Compare compressed images side by side or with a slider, at Fit or 100% zoom.
+- **Your rules.** Choose extensions, folder names, exclusions, units and decimal precision. Saved changes refresh sizes automatically.
+- **Private by design.** Bundled WebAssembly codecs; no uploads, telemetry or runtime network requests.
 
 ```text
 ▾ assets                         3 files · 7.9 MB
@@ -10,145 +32,162 @@ Show folder file counts and complete file sizes directly in the native Explorer 
     logo.svg                                 39 B
 ```
 
-Only the trailing size text uses severity colors. Filenames retain their theme and Git colors; file counts remain neutral. There is no additional panel.
+> **Inline labels require an optional native Explorer patch.** VS Code's standard decoration API limits badges to two characters. The patch modifies three desktop program files, triggers VS Code's integrity warning and must be reapplied after editor updates. Hover tooltips and image compression work without it. Read [Native Explorer patch](#native-explorer-patch) before enabling inline labels.
 
-## Install or update
+## Quick start
 
-1. Install `artifacts/asset-size-0.3.0.vsix` using **Extensions → ⋯ → Install from VSIX**.
-2. Run **Asset Size: Install / Reapply Native Explorer Patch**.
-3. Choose **Reload Window**.
+1. Install the `.vsix` from this project's [GitHub Releases](https://github.com/zyyv/vscode-assets-size/releases), when available, using **Extensions → ⋯ → Install from VSIX…**. To build from source, see [Development](#development).
+2. Open a workspace containing an `assets`, `public`, `static`, `images`, `img`, `media` or `fonts` folder. Hover over matching files and folders to see their sizes.
+3. For full inline labels, run **Assets Size: Install / Reapply Native Explorer Patch** from the Command Palette, then choose **Reload Window**.
 
-**Upgrading from 0.2.0 or 0.2.1 requires updating the native patch.** The command upgrades the verified old patch from the existing original backups. You do not need to restore or remove the old patch first.
+Run **Assets Size: Open Settings** to customize matching rules. An empty folder displays `0 files · 0 B`. Set `assetSize.folderNames` to `["*"]` to include every folder.
 
-Empty folders display `0 files · 0 B`. Internal severity markers are invisible and are decoded separately from the displayed count, including when handling the previous badge format.
+## Compress images
 
-The native patch is needed because the standard VS Code API limits file badges to two characters. It modifies three desktop program files and triggers VS Code's integrity warning. Integrity checks and code signatures are not disabled or modified. Reapply the patch after editor updates. Unsupported code layouts are rejected before program files are changed.
+Open a **JPEG, PNG or WebP** image in VS Code's built-in image preview and click **Compress Image** in the editor toolbar. You can also right-click an image in Explorer or run **Assets Size: Compress Image**.
 
-Without the current patch, details remain available in hover tooltips. Full inline labels require a local desktop extension host with access to the desktop program files.
+![Local image compression with an original and compressed comparison](images/compression.png)
 
-## Restore
+*Screenshot from the 0.3.0 development build, before the Assets Size name update.*
 
-Run **Asset Size: Restore Native Explorer Patch** before uninstalling, then reload the window. Original files and their SHA-256 manifest are retained in `resources/app/.asset-size-native-patch`.
+1. Inspect the original and compressed sizes, savings, and image comparison. Switch between side by side and slider views, or inspect at 100% zoom.
+2. Click **Save Result…**, then choose **Save As** or **Overwrite Original**, with **Allow Once** or **Always Allow**.
+3. Choose **Discard** to close without saving. A successful save refreshes Explorer sizes.
 
-Restoration checks every program file and backup before writing. It refuses to overwrite files changed by an editor update or another tool. Installation failures roll back written files; upgrading a previous patch also preserves its previous manifest if installation fails.
+**Save As** suggests `name.compressed.ext` and confirms before replacing an existing destination. **Overwrite Original** refuses to replace a source that changed after compression or has unsaved edits. **Always Allow** remembers the save action in User Settings; every compression still waits for **Save Result…**. Reset `assetSize.compression.saveBehavior` to `"ask"` to revoke that permission.
 
-The source project provides a CLI after `pnpm build`:
+| Format | Codec | Behavior |
+| --- | --- | --- |
+| JPEG (`.jpg`, `.jpeg`, `.jpe`) | MozJPEG | Lossy; configurable quality |
+| PNG | Oxipng | Lossless; quality setting does not apply |
+| WebP | libwebp | Lossy; configurable quality |
 
-```sh
-node scripts/native-patch.mjs status "/Applications/Visual Studio Code.app/Contents/Resources/app"
-node scripts/native-patch.mjs restore "/Applications/Visual Studio Code.app/Contents/Resources/app"
+Compression preserves the format and dimensions, applying JPEG orientation to the pixels. Metadata preservation is not guaranteed. Animated PNG/WebP, inputs larger than 50 MiB and images above 40 million pixels are rejected. If the result is not smaller, the original bytes are retained. Compression runs in a cancellable worker using locally bundled [jSquash codecs](https://github.com/jamsinclair/jSquash).
+
+## Configuration
+
+Open **Settings → Extensions → Assets Size**, or add this example to `.vscode/settings.json`:
+
+```json
+{
+  "assetSize.displayMode": "always",
+  "assetSize.fileExtensions": [".jpg", ".jpeg", ".png", ".svg", ".webp", ".woff2"],
+  "assetSize.folderNames": ["assets", "public", "images", "fonts"],
+  "assetSize.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
+  "assetSize.showFileCount": true,
+  "assetSize.fileCountMode": "recursive",
+  "assetSize.units": "decimal",
+  "assetSize.compression.quality": 75
+}
 ```
 
-## Size colors
+Configured arrays **replace** the defaults. Exclusions are independent of `.gitignore` and `files.exclude`.
 
-| Size text | File threshold | Folder threshold |
+| Setting | Default | Description |
+| --- | --- | --- |
+| `assetSize.enabled` | `true` | Enable size calculations and decorations. |
+| `assetSize.displayMode` | `"always"` | Inline labels with the patch; `"hover"` shows tooltip details only. |
+| `assetSize.fileExtensions` | Common asset formats | Case-insensitive; leading dot optional. Supports `.tar.gz`; `"*"` matches all files; `[]` hides file decorations. |
+| `assetSize.folderNames` | Common asset folders | Case-insensitive names at any depth. `"*"` matches all folders; `[]` hides folder decorations. |
+| `assetSize.exclude` | VCS, dependencies, `.DS_Store` | Workspace-relative glob patterns; supports `**`, `*` and braces. Excluded files do not contribute to totals. |
+| `assetSize.showFileCount` | `true` | Show the file count before folder size. |
+| `assetSize.fileCountMode` | `"recursive"` | Count all descendants; `"direct"` counts immediate child files. Sizes always include descendants. |
+| `assetSize.units` | `"decimal"` | Base 1000: KB / MB / GB. `"binary"` uses KiB / MiB / GiB. |
+| `assetSize.decimalPlaces` | `1` | Size precision, from 0 to 3 decimal places. |
+| `assetSize.colorize` | `true` | Color the trailing inline size by severity. |
+| `assetSize.fileColorThresholdsMiB` | `[0.25, 1, 5]` | Yellow, orange and red file thresholds. Values are sorted. |
+| `assetSize.folderColorThresholdsMiB` | `[10, 50, 100]` | Yellow, orange and red folder thresholds. Values are sorted. |
+| `assetSize.refreshDelay` | `400` | Batch filesystem events for 100–5000 milliseconds. |
+| `assetSize.compression.quality` | `75` | JPEG/WebP quality from 1 to 100. PNG is lossless. |
+| `assetSize.compression.saveBehavior` | `"ask"` | `"ask"`, `"saveAs"` or `"overwrite"`. Only User Settings can grant remembered save permission. |
+
+Default extensions: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.avif`, `.svg`, `.ico`, `.bmp`, `.heic`, `.mp4`, `.webm`, `.mov`, `.mp3`, `.wav`, `.ogg`, `.woff`, `.woff2`, `.ttf`, `.otf`, `.pdf`, `.zip`.
+
+Default folder names: `assets`, `public`, `static`, `images`, `img`, `media`, `fonts`. Matching a folder does not automatically decorate its subfolders.
+
+Default exclusions: `**/.git/**`, `**/node_modules/**`, `**/.svn/**`, `**/.hg/**`, `**/.DS_Store`.
+
+### Size colors
+
+Thresholds use MiB (1,048,576 bytes), independently of display units. Defaults:
+
+| Size text | Files | Folders |
 | --- | --- | --- |
 | Neutral | Below 256 KiB | Below 10 MiB |
 | Yellow | At least 256 KiB | At least 10 MiB |
 | Orange | At least 1 MiB | At least 50 MiB |
 | Red | At least 5 MiB | At least 100 MiB |
 
-Thresholds use MiB (1024 squared bytes), independently of the display units. Three configured values are sorted in ascending order.
+Customize `assetSize.sizeWarning`, `assetSize.sizeLarge` and `assetSize.sizeCritical` in `workbench.colorCustomizations`. Set `assetSize.colorize` to `false` to use neutral size text.
 
-```json
-{
-  "assetSize.colorize": true,
-  "assetSize.fileColorThresholdsMiB": [0.25, 1, 5],
-  "assetSize.folderColorThresholdsMiB": [10, 50, 100],
-  "workbench.colorCustomizations": {
-    "assetSize.sizeWarning": "#D7BA7D",
-    "assetSize.sizeLarge": "#F0883E",
-    "assetSize.sizeCritical": "#F85149"
-  }
-}
-```
+## Commands
 
-Setting `colorize` to `false` makes the size neutral as well. This extension never sets filename decoration colors.
-
-## Display rules
-
-Search for **Asset Size** in Settings or edit your workspace configuration:
-
-```json
-{
-  "assetSize.enabled": true,
-  "assetSize.displayMode": "always",
-  "assetSize.fileExtensions": [".jpg", ".jpeg", ".png", ".svg", ".webp", ".woff2"],
-  "assetSize.folderNames": ["assets", "public", "static", "images", "fonts"],
-  "assetSize.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
-  "assetSize.showFileCount": true,
-  "assetSize.fileCountMode": "recursive",
-  "assetSize.units": "decimal",
-  "assetSize.decimalPlaces": 1,
-  "assetSize.refreshDelay": 400
-}
-```
-
-| Setting | Behavior |
+| Command Palette entry | Action |
 | --- | --- |
-| `displayMode` | `always` displays counts before sizes with the native patch; `hover` shows details only in the tooltip. |
-| `fileExtensions` / `folderNames` | Case-insensitive matches at any depth. Use `*` for all or an empty array to disable that resource type. |
-| `exclude` | Workspace-relative glob exclusions for both decorations and totals. Supports `**`, `*` and braces. |
-| `showFileCount` / `fileCountMode` | Hide counts, count all descendants (`recursive`), or count immediate child files (`direct`). |
-| `units` / `decimalPlaces` | Default KB / MB (base 1000); `binary` uses KiB / MiB (base 1024). Supports 0–3 decimal places. |
-| `refreshDelay` | Batch filesystem updates over 100–5000 milliseconds; default 400. |
+| **Assets Size: Refresh Sizes** | Recalculate sizes and folder totals. |
+| **Assets Size: Toggle Always / Hover** | Switch between inline labels and tooltips. |
+| **Assets Size: Open Settings** | Open this extension's settings. |
+| **Assets Size: Compress Image** | Compress an image and open its comparison. |
+| **Assets Size: Install / Reapply Native Explorer Patch** | Install, upgrade or reapply the optional patch. |
+| **Assets Size: Restore Native Explorer Patch** | Restore the original desktop program files. |
 
-Default extensions cover images, video, audio, fonts, PDF and ZIP. Default folder names are `assets public static images img media fonts`. Leading dots are optional for extensions; compound extensions such as `.tar.gz` are supported. A matching folder does not automatically decorate its subfolders; configure `folderNames: ["*"]` to include all folders.
+## Native Explorer patch
 
-Default exclusions cover `.git`, `node_modules`, `.svn`, `.hg` and `.DS_Store` at any depth. Configured arrays replace the defaults. Rules are independent of `files.exclude` and `.gitignore`.
+The patch expands the decoration badge limit for this extension and renders counts and sizes in the existing Explorer tree. Before changing three desktop program files, it creates backups and a SHA-256 manifest in `resources/app/.asset-size-native-patch`:
 
-## Totals and refresh
-
-Folder sizes always include every non-excluded descendant file, regardless of which extensions are decorated. Sizes reflect saved file bytes, not allocated disk blocks. Symbolic links are skipped. Unreadable items produce partial totals marked with `≥` and an explanation in the tooltip.
-
-Calculations are requested on demand, with up to 10,000 cached results and 16 concurrent filesystem operations. Workspace-scoped watchers refresh changed files and their ancestors after saves, creation, deletion and renames. Run **Asset Size: Refresh Sizes** if a filesystem provider misses an external change.
-
-Enable `explorer.decorations.badges` for inline labels. Complete labels appear only in Explorer; unrelated decoration badges retain their ordinary rendering elsewhere.
-
-## Image compression
-
-Open a **JPEG, PNG or WebP** image in the built-in image preview and click **Compress Image** (the inward-folding arrows) at the top right of the editor. The command is also available in the Explorer context menu and Command Palette.
-
-Compression uses the Squoosh-derived [jSquash codecs](https://github.com/jamsinclair/jSquash), bundled locally with the extension. JPEG uses MozJPEG, PNG uses lossless Oxipng, and WebP uses libwebp. A cancellable background worker keeps the editor responsive; images are never uploaded.
-
-1. Click the compression icon to open an image diff with original/compressed sizes and the percentage saved.
-2. Inspect the side-by-side images at Fit or 100%, or use the comparison slider.
-3. Click **Save Result…** and choose **Save As** or **Overwrite Original**, with **Allow Once** or **Always Allow**. Discard closes the result without writing an image.
-
-**Always Allow** remembers the save action in User Settings. Every compression still opens a comparison and requires clicking **Save Result…**. Save As defaults to `name.compressed.ext`; it asks before replacing an existing destination. Overwrite refuses if the original has changed since compression or has unsaved edits. Saving refreshes Explorer sizes immediately.
-
-```json
-{
-  "assetSize.compression.quality": 75,
-  "assetSize.compression.saveBehavior": "ask"
-}
+```text
+out/vs/workbench/api/node/extensionHostProcess.js
+out/vs/workbench/workbench.desktop.main.js
+out/vs/workbench/workbench.desktop.main.css
 ```
 
-`quality` ranges from 1–100 for JPEG/WebP. PNG optimization is lossless. `saveBehavior` accepts `ask`, `saveAs`, or `overwrite`; reset it to `ask` to revoke Always Allow. Save permission can only be configured in User Settings.
+Run **Assets Size: Install / Reapply Native Explorer Patch**, then reload. This requires write permission to the application directory. Integrity checks and code signatures are not disabled; VS Code may report that the installation appears corrupt. Hover mode and compression remain available without the patch.
 
-Compression preserves the format and dimensions (applying JPEG orientation). JPEG/WebP re-encoding removes metadata and may lose quality; compare before saving. Animated PNG/WebP are rejected so frames are never silently discarded. Images are limited to 50 MiB and 40 million pixels, with a 120-second compression timeout. Results that do not reduce size can be compared but cannot replace the smaller original.
+Unsupported editor code layouts are rejected before writing. The minimum API version does not guarantee patch compatibility with every VS Code release or derivative. Reapply after editor updates. Upgrades from 0.2.0 / 0.2.1 reuse verified original backups without restoring first.
+
+**Before uninstalling**, run **Assets Size: Restore Native Explorer Patch** and reload. Restoration checks program files and backups before writing, and refuses to overwrite files changed by an editor update or another tool. Original backups remain available. See [recovery commands](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md#native-patch-recovery) if the extension is already uninstalled.
+
+## Totals and compatibility
+
+Folder totals include **all non-excluded descendant files**, regardless of which extensions receive decorations. Sizes reflect saved file bytes, not allocated disk blocks. Symbolic links are skipped. Unreadable items produce partial totals marked with `≥` and an explanation in the tooltip.
+
+Results are calculated on demand, with up to 10,000 cached entries and 16 concurrent filesystem operations. Workspace watchers refresh files and ancestors after saves, additions, deletions and renames. Run **Assets Size: Refresh Sizes** if an external change is missed.
+
+| Situation | What to check |
+| --- | --- |
+| Only tooltips appear | Reapply the patch, reload, select `"always"` and enable `explorer.decorations.badges`. |
+| No size for an item | Check matching rules, exclusions, `assetSize.enabled` and symbolic links. |
+| Remote SSH, WSL or Dev Containers | Calculations use the workspace extension host. Inline labels require access to local desktop program files; do not assume patch support in remote sessions. |
+| Virtual workspace | Totals depend on the filesystem provider's stat, enumeration and watch support. |
+| Browser / vscode.dev | Not supported; this extension requires a Node.js extension host and WebAssembly workers. |
+
+## Privacy and licensing
+
+No file uploads, telemetry or external network requests are made at runtime. In remote workspaces, processing happens on the workspace extension host. Codecs ship with the extension; image bytes are not sent to a service.
+
+Assets Size is [MIT licensed](https://github.com/zyyv/vscode-assets-size/blob/main/LICENSE). See [third-party notices](https://github.com/zyyv/vscode-assets-size/blob/main/THIRD_PARTY_NOTICES.md) for bundled codec and dependency licenses.
 
 ## Development
 
+Use Node.js 24+ and the pnpm version in `package.json`:
+
 ```sh
-pnpm install
-pnpm check
+pnpm install --frozen-lockfile
 pnpm lint
-pnpm build
+pnpm test
 pnpm package
 ```
 
-Press **F5** to launch the demo. The extension uses VS Code 1.90 API types; the native patch checks the current desktop code layout for compatibility.
+`pnpm package` typechecks and builds, then writes `artifacts/assets-size-<version>.vsix`. Install it from the Extensions menu. Press **F5** to launch the example workspace in an Extension Development Host.
 
-Optional test commands are available for manual development use:
+For desktop integration and UI checks, use a disposable VS Code installation:
 
 ```sh
-pnpm test
 VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:integration
 VSCODE_EXECUTABLE_PATH="/path/to/patched/test/Code" pnpm test:ui
 VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 ```
 
-Use disposable test installations for native patch UI checks. All UI/integration checks use temporary workspace, profile and extension directories. Without an executable path, integration tests download VS Code 1.90.2. UI screenshots are saved to `artifacts/native-explorer-preview.png` and `artifacts/image-compression-preview.png`. Compression checks exercise all three codecs, pixel-perfect PNG/alpha, Save As, cancellation, stale source protection, and remembered overwrite permission.
+Without an executable path, integration tests download VS Code 1.90.2. UI checks use temporary profiles and workspaces; native patch checks must target a disposable application copy.
 
-No file uploads, telemetry or external network requests are made at runtime.
+Follow the [publishing checklist](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md) for a Marketplace release. CI runs lint, builds a VSIX and exercises unit tests; it does not publish. Contributions and reproducible bug reports are welcome in [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues).

@@ -2,6 +2,11 @@
 
 ## 0.3.0
 
+- Introduce the Assets Size name, a new extension icon, and English / Simplified Chinese documentation.
+- Add Marketplace metadata, version-aware VSIX packaging, and a release checklist.
+- Open extension settings using the installed extension ID so publisher changes work correctly.
+- Use TypeScript 6 for typechecking and ESLint compatibility.
+- Include the bundled glob matcher's license alongside the codec notices.
 - Add a Compress Image button to JPEG, PNG and WebP previews, using locally bundled Squoosh-derived jSquash codecs.
 - Compare original and compressed images side by side, at 100%, or with a slider before saving.
 - Support Save As / Overwrite Original with Allow Once / Always Allow and a resettable User setting.

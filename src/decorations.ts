@@ -46,7 +46,7 @@ export class SizeDecorationProvider implements vscode.FileDecorationProvider, vs
       const badge = this.nativePatchActive && settings.displayMode === 'always'
         ? `${nativeLabelMarker}${tone}${inlineLabel(metrics, settings)}${nativeLabelMarker}`
         : undefined
-      const tooltip = `Asset Size\n${describeMetrics(metrics, settings)}`
+      const tooltip = `Assets Size\n${describeMetrics(metrics, settings)}`
       // FileDecoration.color also colors filenames. The native renderer reads
       // the tone from our payload and applies it to the size suffix only.
       return { badge, tooltip, propagate: false }
