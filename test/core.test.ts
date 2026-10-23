@@ -11,8 +11,7 @@ import { FileKind } from '../src/core/types'
 const defaults: Settings = {
   enabled: true,
   displayMode: 'always',
-  fileExtensions: ['.png', '.jpg', '.tar.gz'],
-  folderNames: ['assets', 'public'],
+  include: ['**/*.{png,jpg,tar.gz}', '**/{assets,public}'],
   exclude: ['**/node_modules/**', '**/.git/**', '**/*.tmp'],
   showFileCount: true,
   fileCountMode: 'recursive',
@@ -63,17 +62,57 @@ function scanner(fs: MemoryFs): SizeScanner {
   return new SizeScanner(fs, key => matcher.isExcluded(key.slice(1)))
 }
 
-it('resource rules match extensions and folder basenames without restricting aggregate contents', () => {
+it('include globs match files and folders relative to the workspace', () => {
   const matcher = new ResourceMatcher(defaults)
-  assert.equal(matcher.matches('LOGO.PNG', false), true)
-  assert.equal(matcher.matches('archive.tar.gz', false), true)
-  assert.equal(matcher.matches('readme.md', false), false)
-  assert.equal(matcher.matches('ASSETS', true), true)
-  assert.equal(matcher.matches('assets', false), false)
-  assert.equal(matcher.matches('src', true), false)
-  assert.equal(new ResourceMatcher({ ...defaults, fileExtensions: ['jpg'], folderNames: ['*'] }).matches('logo.JPG', false), true)
-  assert.equal(new ResourceMatcher({ ...defaults, fileExtensions: ['*'] }).matches('LICENSE', false), true)
-  assert.equal(new ResourceMatcher({ ...defaults, enabled: false }).matches('logo.png', false), false)
+  for (const path of ['LOGO.PNG', 'archive.tar.gz', 'ASSETS', 'src/logo.jpg']) {
+    assert.equal(matcher.matches(path), true, path)
+  }
+  for (const path of ['readme.md', 'src', 'LICENSE']) {
+    assert.equal(matcher.matches(path), false, path)
+  }
+  assert.equal(new ResourceMatcher({ ...defaults, include: ['**/*'] }).matches('LICENSE'), true)
+  assert.equal(new ResourceMatcher({ ...defaults, include: [] }).matches('LOGO.PNG'), false)
+  assert.equal(new ResourceMatcher({ ...defaults, enabled: false }).matches('LOGO.PNG'), false)
+})
+
+it('include and exclude globs support nested paths, dotfiles, braces and negated includes', () => {
+  const matcher = new ResourceMatcher({
+    ...defaults,
+    include: ['src/assets/*.{png,svg}', '!**/draft.*'],
+    exclude: ['**/*.svg'],
+  })
+  assert.equal(matcher.matches('src/assets/logo.png'), true)
+  assert.equal(matcher.matches('src\\assets\\.hidden.png'), true)
+  assert.equal(matcher.matches('src/assets/icon.svg'), false)
+  assert.equal(matcher.matches('src/assets/draft.png'), false)
+  assert.equal(matcher.matches('other/logo.png'), false)
+  const uppercase = new ResourceMatcher({ ...defaults, include: ['SRC/ASSETS/*.{PNG,SVG}'] })
+  assert.equal(uppercase.matches('src/assets/logo.png'), true)
+  assert.equal(uppercase.matches('../src/assets/logo.png'), false)
+  assert.equal(uppercase.matches('/src/assets/logo.png'), false)
+})
+
+it('directory globs match the directory path itself and its descendants', () => {
+  const matcher = new ResourceMatcher({ ...defaults, include: ['./assets/**'] })
+  assert.equal(matcher.matches('assets'), true)
+  assert.equal(matcher.matches('assets/logo.png'), true)
+  assert.equal(matcher.matches('assets/nested'), true)
+  assert.equal(matcher.matches('other/assets'), false)
+})
+
+it('negated includes hide descendants without excluding them from folder totals and keep extglobs working', () => {
+  const matcher = new ResourceMatcher({ ...defaults, include: ['**/*', '!**/drafts'] })
+  assert.equal(matcher.matches('assets/logo.png'), true)
+  assert.equal(matcher.matches('assets/drafts'), false)
+  assert.equal(matcher.matches('assets/drafts/logo.png'), false)
+  assert.equal(matcher.isExcluded('assets/drafts/logo.png'), false)
+  assert.equal(new ResourceMatcher({ ...defaults, include: ['!**/*.tmp'] }).matches('assets/logo.png'), false)
+  const extglob = new ResourceMatcher({ ...defaults, include: ['assets/!(draft).png'] })
+  assert.equal(extglob.matches('assets/logo.png'), true)
+  assert.equal(extglob.matches('assets/draft.png'), false)
+  const negatedExtglob = new ResourceMatcher({ ...defaults, include: ['!(draft).png'] })
+  assert.equal(negatedExtglob.matches('logo.png'), true)
+  assert.equal(negatedExtglob.matches('draft.png'), false)
 })
 
 it('exclusions prune directory roots, descendants, dotfiles, Windows separators and brace globs', () => {
@@ -84,6 +123,15 @@ it('exclusions prune directory roots, descendants, dotfiles, Windows separators 
   for (const path of ['', 'assets/logo.png', 'assets/node_modules_backup/logo.png', '.github/workflows/ci.yml']) {
     assert.equal(matcher.isExcluded(path), false, path)
   }
+})
+
+it('exclusions normalize relative patterns and ignore negated exclusion entries', () => {
+  const matcher = new ResourceMatcher({ ...defaults, include: ['**/*'], exclude: ['./assets/**', '!**/*.png'] })
+  assert.equal(matcher.isExcluded('assets'), true)
+  assert.equal(matcher.isExcluded('assets/logo.png'), true)
+  assert.equal(matcher.isExcluded('icon.PNG'), false)
+  assert.equal(matcher.matches('assets/logo.png'), false)
+  assert.equal(matcher.matches('icon.PNG'), true)
 })
 
 it('folder totals include all file types, keep direct and recursive counts, skip symlink loops', async () => {

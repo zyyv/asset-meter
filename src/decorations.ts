@@ -30,12 +30,11 @@ export class SizeDecorationProvider implements vscode.FileDecorationProvider, vs
   }
 
   async provideFileDecoration(uri: vscode.Uri, token: vscode.CancellationToken): Promise<vscode.FileDecoration | undefined> {
-    if (token.isCancellationRequested || !this.service.mayMatch(uri)) { return undefined }
+    if (token.isCancellationRequested || !this.service.matches(uri)) { return undefined }
     try {
       const stat = await this.service.stat(uri)
       if ((stat.type & vscode.FileType.SymbolicLink) !== 0) { return undefined }
       const isDirectory = (stat.type & vscode.FileType.Directory) !== 0
-      if (!this.service.matches(uri, isDirectory)) { return undefined }
       const metrics = await this.service.measure(uri)
       if (token.isCancellationRequested) { return undefined }
       const settings = this.service.settings(uri)

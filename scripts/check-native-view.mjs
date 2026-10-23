@@ -41,7 +41,7 @@ try {
   await writeFile(path.join(workspace, 'assets/images/texture.jpg'), Buffer.alloc(1.5 * 1024 ** 2))
   await writeFile(path.join(workspace, 'assets/logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
   const settings = {
-    'assetSize.folderNames': ['assets', 'images'],
+    'assetSize.include': ['**/*.{png,jpg,svg}', '**/{assets,images}'],
     'assetSize.folderColorThresholdsMiB': [1, 3, 5],
     'assetSize.displayMode': 'always',
     'assetSize.units': 'decimal',
