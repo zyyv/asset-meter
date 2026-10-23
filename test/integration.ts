@@ -12,6 +12,22 @@ export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<AssetSizeApi>(`${publisher}.${name}`)
   assert.ok(extension, 'Extension is installed in the development host')
   const api = await extension.activate()
+  const plugin = {
+    id: 'integration-test',
+    label: 'Integration Test',
+    description: 'Local test plugin',
+    formats: ['png'] as const,
+    describe: () => 'Test PNG',
+    compress: ({ bytes }: { bytes: Uint8Array }) => ({ result: Promise.resolve(bytes), cancel: () => {} }),
+  }
+  const registration = api.registerCompressionPlugin(plugin)
+  assert.throws(() => api.registerCompressionPlugin(plugin), /already registered/)
+  registration.dispose()
+  const replacement = api.registerCompressionPlugin(plugin)
+  registration.dispose()
+  assert.throws(() => api.registerCompressionPlugin(plugin), /already registered/)
+  replacement.dispose()
+  console.log('Asset Size integration: compression plugin API registration and disposal')
   const root = vscode.workspace.workspaceFolders?.[0]?.uri
   assert.ok(root)
   const assets = vscode.Uri.joinPath(root, 'assets')

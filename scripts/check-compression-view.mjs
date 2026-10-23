@@ -37,6 +37,32 @@ try {
   await new Promise(resolve => server.close(resolve))
   await mkdir(path.join(workspace, '.vscode'), { recursive: true })
   await mkdir(path.join(profile, 'User'), { recursive: true })
+  const errorFixture = path.join(temporary, 'extensions', 'asset-size-error-fixture')
+  await mkdir(errorFixture, { recursive: true })
+  await writeFile(path.join(errorFixture, 'package.json'), JSON.stringify({
+    name: 'asset-size-error-fixture',
+    publisher: 'test',
+    version: '1.0.0',
+    engines: { vscode: '^1.90.0' },
+    main: './extension.js',
+    activationEvents: ['*'],
+    extensionDependencies: ['zyyv.vscode-asset-size'],
+  }))
+  await writeFile(path.join(errorFixture, 'extension.js'), `
+    const vscode = require('vscode')
+    exports.activate = async (context) => {
+      const api = await vscode.extensions.getExtension('zyyv.vscode-asset-size').activate()
+      const metadata = { description: 'Local error fixture; no network requests', describe: () => 'Test result' }
+      context.subscriptions.push(api.registerCompressionPlugin({
+        ...metadata, id: 'failed-api-test', label: 'Failed API (Test)', formats: ['png'],
+        compress: () => ({ result: Promise.reject(new Error('TinyPNG request failed (HTTP 503). Try again later or use jSquash.')), cancel() {} }),
+      }))
+      context.subscriptions.push(api.registerCompressionPlugin({
+        ...metadata, id: 'broken-output-test', label: 'Broken Output (Test)', formats: ['jpeg'],
+        compress: () => ({ result: Promise.resolve(Buffer.from('ffd8ffc00008080001000101', 'hex')), cancel() {} }),
+      }))
+    }
+  `)
   for (const name of ['sample.png', 'sample.jpg', 'sample.webp']) {
     await copyFile(path.join(root, 'test/fixtures', name), path.join(workspace, name))
   }
@@ -50,8 +76,14 @@ try {
     'window.restoreWindows': 'none',
     'security.workspace.trust.enabled': false,
     'files.simpleDialog.enable': true,
+    'workbench.editorAssociations': {
+      '*.png': 'imagePreview.previewEditor',
+      '*.jpg': 'imagePreview.previewEditor',
+      '*.webp': 'imagePreview.previewEditor',
+    },
   }))
-  child = spawn(executable, [workspace, '--user-data-dir', profile, '--extensions-dir', path.join(temporary, 'extensions'), `--extensionDevelopmentPath=${root}`, '--disable-extensions', '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', '--disable-updates', '--no-sandbox', `--remote-debugging-port=${port}`], { stdio: ['ignore', 'pipe', 'pipe'] })
+  // The isolated extensions directory excludes user extensions; keep built-in image previews enabled.
+  child = spawn(executable, [workspace, '--user-data-dir', profile, '--extensions-dir', path.join(temporary, 'extensions'), `--extensionDevelopmentPath=${root}`, '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', '--disable-updates', '--no-sandbox', `--remote-debugging-port=${port}`], { stdio: ['ignore', 'pipe', 'pipe'] })
   const capture = (data) => { log = (log + data.toString()).slice(-15_000) }
   child.stdout.on('data', capture); child.stderr.on('data', capture)
   child.on('error', (error) => { log += error.message })
@@ -61,10 +93,14 @@ try {
   await page.locator('.monaco-workbench').waitFor({ state: 'visible' })
   const originalPng = await readFile(path.join(workspace, 'sample.png'))
   const quickInput = () => page.locator('.quick-input-widget input').first()
-  async function openImage(name) {
+  async function chooseCompression(name, plugin = 'jSquash') {
     await page.locator('.explorer-folders-view .explorer-item').filter({ hasText: new RegExp(`^${name.replaceAll('.', '\\.')}\\b`) }).first().dblclick()
     await page.locator('.editor-actions .action-label[aria-label*="Compress Image"]').first().waitFor({ state: 'visible' })
     await page.locator('.editor-actions .action-label[aria-label*="Compress Image"]').first().click()
+    await page.getByText(plugin, { exact: true }).last().click()
+  }
+  async function openImage(name, plugin = 'jSquash') {
+    await chooseCompression(name, plugin)
     return waitFor(async () => {
       for (const frame of page.frames()) {
         if (await frame.locator('#save').count()) { return frame }
@@ -79,8 +115,12 @@ try {
     await frame.locator('#save').click()
     await page.getByText(label, { exact: true }).last().click()
   }
+  await chooseCompression('sample.png', 'Failed API (Test)')
+  await page.getByText('Assets Size compression failed: TinyPNG request failed (HTTP 503). Try again later or use jSquash.', { exact: true }).last().waitFor()
+  assert.deepEqual(await readFile(path.join(workspace, 'sample.png')), originalPng)
   let frame = await openImage('sample.png')
   await waitFor(() => frame.locator('.pair img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth === 256 && image.naturalHeight === 160)), 'decoded comparison images')
+  await waitFor(() => frame.locator('#save').isEnabled(), 'save enabled after successful decoding')
   assert.equal(await frame.locator('#save').isEnabled(), true)
   const pixelsMatch = await frame.locator('.pair img').evaluateAll((images) => {
     const pixels = images.map((image) => {
@@ -91,6 +131,33 @@ try {
     return pixels[0].every((value, index) => value === pixels[1][index])
   })
   assert.equal(pixelsMatch, true, 'PNG pixels and transparency are unchanged')
+  assert.equal(await frame.locator('#plugin').inputValue(), 'jsquash')
+  const successfulResult = await frame.locator('body').getAttribute('data-result-id')
+  const successfulImage = await frame.locator('.pair img').last().getAttribute('src')
+  await frame.locator('#plugin').selectOption('failed-api-test')
+  await frame.locator('#recompress').click()
+  await waitFor(async () => (await frame.locator('#status').textContent()).includes('HTTP 503'), 'failed API feedback')
+  assert.equal(await frame.locator('#plugin').inputValue(), 'jsquash')
+  assert.equal(await frame.locator('body').getAttribute('data-result-id'), successfulResult)
+  assert.equal(await frame.locator('.pair img').last().getAttribute('src'), successfulImage)
+  assert.equal(await frame.locator('#save').isEnabled(), true)
+  assert.equal(await frame.locator('#recompress').isEnabled(), true)
+  assert.deepEqual(await readFile(path.join(workspace, 'sample.png')), originalPng)
+  await frame.locator('#plugin').selectOption('tinypng')
+  assert.match(await frame.locator('#plugin-description').textContent(), /uploads images/)
+  assert.equal(await frame.locator('#save').isEnabled(), false, 'Changing plugin requires compression before saving')
+  await frame.locator('#recompress').click()
+  await waitFor(async () => (await frame.locator('#status').textContent()).includes('tinypng.apiKey'), 'missing API key feedback')
+  assert.equal(await frame.locator('#plugin').inputValue(), 'jsquash', 'Failed compression restores the plugin of the visible result')
+  assert.equal(await frame.locator('#save').isEnabled(), true)
+  const resultId = await frame.locator('body').getAttribute('data-result-id')
+  await frame.locator('#recompress').click()
+  frame = await waitFor(async () => {
+    for (const candidate of page.frames()) {
+      if (await candidate.locator('#save').count() && (await candidate.locator('body').getAttribute('data-result-id')) !== resultId) { return candidate }
+    }
+  }, 'recompressed comparison')
+  await waitFor(() => frame.locator('.pair img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth === 256)), 'recompressed images decoded')
   await frame.locator('#mode').selectOption('slider')
   await frame.locator('#split').fill('25')
   assert.match(await frame.locator('#after-overlay').getAttribute('style'), /25%/)
@@ -106,7 +173,7 @@ try {
   await page.keyboard.press('Escape')
   await waitFor(() => frame.locator('#save').isEnabled(), 'cancelled save returns to comparison')
   assert.deepEqual(await readFile(path.join(workspace, 'sample.png')), originalPng)
-  console.log('Compression UI: preview toolbar icon, lossless PNG/alpha, diff modes, zoom and cancellation passed.')
+  console.log('Compression UI: plugin selection, missing API key, recompression, lossless PNG/alpha, diff modes, zoom and cancellation passed.')
 
   await chooseSave(frame, 'Save As — Allow Once')
   await waitFor(() => quickInput().isVisible(), 'Save As path dialog')
@@ -129,6 +196,24 @@ try {
   await discard(frame)
   await writeFile(path.join(workspace, 'sample.png'), originalPng)
   console.log('Compression UI: stale original is protected from overwrite.')
+
+  const originalJpeg = await readFile(path.join(workspace, 'sample.jpg'))
+  frame = await openImage('sample.jpg', 'Broken Output (Test)')
+  await waitFor(async () => (await frame.locator('#status').textContent()).includes('could not be decoded'), 'broken output rejected after decoding')
+  assert.equal(await frame.locator('#save').isEnabled(), false)
+  assert.equal(await frame.locator('#recompress').isEnabled(), true)
+  assert.deepEqual(await readFile(path.join(workspace, 'sample.jpg')), originalJpeg)
+  const brokenResult = await frame.locator('body').getAttribute('data-result-id')
+  await frame.locator('#plugin').selectOption('jsquash')
+  await frame.locator('#recompress').click()
+  frame = await waitFor(async () => {
+    for (const candidate of page.frames()) {
+      if (await candidate.locator('#save').count() && (await candidate.locator('body').getAttribute('data-result-id')) !== brokenResult) { return candidate }
+    }
+  }, 'successful retry after broken output')
+  await waitFor(() => frame.locator('#save').isEnabled(), 'save available after a valid retry')
+  await discard(frame)
+  console.log('Compression UI: failed API calls retain the original and previous result; undecodable output cannot be saved and a valid retry recovers.')
 
   frame = await openImage('sample.jpg')
   await waitFor(() => frame.locator('.pair img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth === 256)), 'JPEG comparison')

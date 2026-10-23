@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add a compression plugin registry and an API for other extensions to register compressors.
+- Add TinyPNG cloud compression with a User Settings API key, cancellation and actionable errors.
+- Choose plugins before compression or switch and recompress in the comparison view.
+- Disable saving until both comparison images decode successfully, rejecting undecodable compression results.
+
 ## 0.3.0
 
 - Show right-aligned counts and sizes on the hovered Explorer row in hover mode; hide them again on mouse leave.

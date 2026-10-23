@@ -12,9 +12,9 @@
   <a href="https://github.com/zyyv/vscode-assets-size/blob/main/README.zh-CN.md">简体中文</a>
 </p>
 
-See file sizes and folder counts where you already work: VS Code's Explorer. Find heavy assets, then compress JPEG, PNG and WebP images locally with a visual comparison before saving.
+See file sizes and folder counts where you already work: VS Code's Explorer. Find heavy assets, then compress JPEG, PNG and WebP images with jSquash or TinyPNG and compare before saving.
 
-**VS Code 1.90+ · Desktop extension · Local processing · MIT**
+**VS Code 1.90+ · Desktop extension · Pluggable compression · MIT**
 
 ## At a glance
 
@@ -22,7 +22,7 @@ See file sizes and folder counts where you already work: VS Code's Explorer. Fin
 - **Useful color cues.** Configurable warning, large and critical thresholds on size text; filenames keep their theme and Git colors.
 - **Preview before saving.** Compare compressed images side by side or with a slider, at Fit or 100% zoom.
 - **Your rules.** Choose extensions, folder names, exclusions, units and decimal precision. Saved changes refresh sizes automatically.
-- **Private by design.** Bundled WebAssembly codecs; no uploads, telemetry or runtime network requests.
+- **Choose your compressor.** Local jSquash codecs by default, or optional TinyPNG cloud compression with your API key. No telemetry.
 
 ```text
 ▾ assets                         3 files · 7.9 MB
@@ -50,19 +50,26 @@ Open a **JPEG, PNG or WebP** image in VS Code's built-in image preview and click
 
 *Screenshot from the 0.3.0 development build, before the Assets Size name update.*
 
-1. Inspect the original and compressed sizes, savings, and image comparison. Switch between side by side and slider views, or inspect at 100% zoom.
-2. Click **Save Result…**, then choose **Save As** or **Overwrite Original**, with **Allow Once** or **Always Allow**.
-3. Choose **Discard** to close without saving. A successful save refreshes Explorer sizes.
+1. Choose a compression plugin from the picker: **jSquash** runs locally; **TinyPNG** uploads the image to its API. In the comparison, use the **Plugin** dropdown and **Compress Again** to try another plugin.
+2. Inspect the original and compressed sizes, savings, and image comparison. Switch between side by side and slider views, or inspect at 100% zoom.
+3. Click **Save Result…**, then choose **Save As** or **Overwrite Original**, with **Allow Once** or **Always Allow**.
+4. Choose **Discard** to close without saving. A successful save refreshes Explorer sizes.
 
 **Save As** suggests `name.compressed.ext` and confirms before replacing an existing destination. **Overwrite Original** refuses to replace a source that changed after compression or has unsaved edits. **Always Allow** remembers the save action in User Settings; every compression still waits for **Save Result…**. Reset `assetSize.compression.saveBehavior` to `"ask"` to revoke that permission.
 
-| Format | Codec | Behavior |
+| Format | jSquash codec | Behavior |
 | --- | --- | --- |
 | JPEG (`.jpg`, `.jpeg`, `.jpe`) | MozJPEG | Lossy; configurable quality |
 | PNG | Oxipng | Lossless; quality setting does not apply |
 | WebP | libwebp | Lossy; configurable quality |
 
-Compression preserves the format and dimensions, applying JPEG orientation to the pixels. Metadata preservation is not guaranteed. Animated PNG/WebP, inputs larger than 50 MiB and images above 40 million pixels are rejected. If the result is not smaller, the original bytes are retained. Compression runs in a cancellable worker using locally bundled [jSquash codecs](https://github.com/jamsinclair/jSquash).
+Compression preserves the format and dimensions, applying JPEG orientation to the pixels. Metadata preservation is not guaranteed. Animated PNG/WebP, inputs larger than 50 MiB and images above 40 million pixels are rejected. If the result is not smaller, saving is disabled. jSquash runs in a cancellable worker using locally bundled [codecs](https://github.com/jamsinclair/jSquash). TinyPNG supports the same three formats and chooses compression quality automatically.
+
+To use TinyPNG, [get an API key](https://tinypng.com/developers), then set `assetSize.compression.tinypng.apiKey` in **User Settings**. The key is stored as plain text, excluded from Settings Sync, and never sent to the comparison webview. Each compression uploads the original image and uses your TinyPNG API quota; switching the dropdown alone does not send a request. Set `assetSize.compression.plugin` to `"tinypng"` to show it first in the picker. Requests follow the [TinyPNG HTTP API](https://tinypng.com/developers/reference).
+
+Failed API calls show an error and leave the original unchanged. A failed **Compress Again** keeps the previous successful result and restores the controls. Retry manually or choose another plugin; requests are not automatically retried. Saving stays disabled until both comparison images decode successfully, so undecodable output cannot be saved through the comparison.
+
+Other extensions can register compressors through `await vscode.extensions.getExtension('zyyv.vscode-asset-size').activate()`, then call `api.registerCompressionPlugin(plugin)` and add the returned disposable to their subscriptions. Plugins implement `CompressionPlugin` in `src/compression/plugins.ts`: an ID, label, description, supported formats, `describe(input)`, and `compress(input, context)` returning `{ result: Promise<Uint8Array>, cancel() }`. The picker and comparison dropdown discover registered plugins automatically. Plugins own their settings and encoding; the shared flow validates inputs and outputs, displays the comparison, and handles saving.
 
 ## Configuration
 
@@ -77,6 +84,7 @@ Open **Settings → Extensions → Assets Size**, or add this example to `.vscod
   "assetSize.showFileCount": true,
   "assetSize.fileCountMode": "recursive",
   "assetSize.units": "decimal",
+  "assetSize.compression.plugin": "jsquash",
   "assetSize.compression.quality": 75
 }
 ```
@@ -98,7 +106,9 @@ Configured arrays **replace** the defaults. Exclusions are independent of `.giti
 | `assetSize.fileColorThresholdsMiB` | `[0.25, 1, 5]` | Yellow, orange and red file thresholds. Values are sorted. |
 | `assetSize.folderColorThresholdsMiB` | `[10, 50, 100]` | Yellow, orange and red folder thresholds. Values are sorted. |
 | `assetSize.refreshDelay` | `400` | Batch filesystem events for 100–5000 milliseconds. |
-| `assetSize.compression.quality` | `75` | JPEG/WebP quality from 1 to 100. PNG is lossless. |
+| `assetSize.compression.plugin` | `"jsquash"` | Preferred plugin shown first in the picker: `jsquash`, `tinypng`, or a registered plugin ID. |
+| `assetSize.compression.tinypng.apiKey` | `""` | TinyPNG API key in User Settings only; plain text, excluded from Settings Sync. |
+| `assetSize.compression.quality` | `75` | jSquash JPEG/WebP quality from 1 to 100. jSquash PNG is lossless; TinyPNG ignores this setting. |
 | `assetSize.compression.saveBehavior` | `"ask"` | `"ask"`, `"saveAs"` or `"overwrite"`. Only User Settings can grant remembered save permission. |
 
 Default extensions: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.avif`, `.svg`, `.ico`, `.bmp`, `.heic`, `.mp4`, `.webm`, `.mov`, `.mp3`, `.wav`, `.ogg`, `.woff`, `.woff2`, `.ttf`, `.otf`, `.pdf`, `.zip`.
@@ -163,7 +173,7 @@ Results are calculated on demand, sharing cached file stats and subtree totals a
 
 ## Privacy and licensing
 
-No file uploads, telemetry or external network requests are made at runtime. In remote workspaces, processing happens on the workspace extension host. Codecs ship with the extension; image bytes are not sent to a service.
+No telemetry is collected. jSquash processes images locally without uploads or external network requests. Choosing TinyPNG uploads the selected image to `api.tinify.com` over HTTPS using your API key. Registered plugins may use other services; check their descriptions. In remote workspaces, processing and API requests happen on the workspace extension host.
 
 Assets Size is [MIT licensed](https://github.com/zyyv/vscode-assets-size/blob/main/LICENSE). See [third-party notices](https://github.com/zyyv/vscode-assets-size/blob/main/THIRD_PARTY_NOTICES.md) for bundled codec and dependency licenses.
 
