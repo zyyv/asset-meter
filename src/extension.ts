@@ -11,7 +11,7 @@ export interface AssetSizeApi {
 
 export async function activate(context: vscode.ExtensionContext): Promise<AssetSizeApi> {
   const service = new SizeService()
-  const compression = new ImageCompression(context, uri => service.invalidate([uri]))
+  const compression = new ImageCompression(context, (uri) => { void service.refresh([uri]) })
   const patchStatus = await getNativePatchStatus(vscode.env.appRoot).catch(error => ({
     installed: false,
     needsUpgrade: false,
@@ -27,7 +27,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
     timer = undefined
     const uris = [...pending.values()]
     pending.clear()
-    if (uris.length) { service.invalidate(uris) }
+    if (uris.length) { void service.refresh(uris) }
   }
   const queue = (uri: vscode.Uri) => {
     if (service.isExcluded(uri)) { return }

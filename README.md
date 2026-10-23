@@ -151,7 +151,7 @@ Unsupported editor code layouts are rejected before writing. The minimum API ver
 
 Folder totals include **all non-excluded descendant files**, regardless of which extensions receive decorations. Sizes reflect saved file bytes, not allocated disk blocks. Symbolic links are skipped. Unreadable items produce partial totals marked with `≥` and an explanation in the tooltip.
 
-Results are calculated on demand, with up to 10,000 cached entries and 16 concurrent filesystem operations. Workspace watchers refresh files and ancestors after saves, additions, deletions and renames. Run **Assets Size: Refresh Sizes** if an external change is missed.
+Results are calculated on demand, sharing cached file stats and subtree totals across requests, with up to 10,000 resource entries and 16 concurrent filesystem operations. After saves, additions, deletions and renames, workspace watchers update affected branches and cached ancestors before refreshing Explorer. Unchanged child contributions are reused; evicted branches are rebuilt when needed. Run **Assets Size: Refresh Sizes** if an external change is missed.
 
 | Situation | What to check |
 | --- | --- |
@@ -178,6 +178,8 @@ pnpm test
 pnpm package
 ```
 
+`pnpm test` builds the extension and runs the core, native patch and compression tests with Vitest. Use `pnpm test:unit` to run against an existing build, or `pnpm test:watch` to build once and watch the tests.
+
 `pnpm package` typechecks and builds, then writes `artifacts/assets-size-<version>.vsix`. Install it from the Extensions menu. Press **F5** to launch the example workspace in an Extension Development Host.
 
 For desktop integration and UI checks, use a disposable VS Code installation:
@@ -190,4 +192,4 @@ VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 
 Without an executable path, integration tests download VS Code 1.90.2. UI checks use temporary profiles and workspaces; native patch checks must target a disposable application copy.
 
-Follow the [publishing checklist](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md) for a Marketplace release. CI runs lint, builds a VSIX and exercises unit tests; it does not publish. Contributions and reproducible bug reports are welcome in [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues).
+After the one-time `VSCE_PAT` setup in the [publishing guide](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md), commit your changes and run `pnpm run publish`. Choose a version in bumpp; it updates the changelog, commits and pushes a `v*` tag. GitHub Actions checks, builds and publishes the extension to Marketplace, then creates a GitHub Release with the VSIX attached. Contributions and reproducible bug reports are welcome in [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues).

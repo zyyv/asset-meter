@@ -8,6 +8,7 @@ import { defaultFileThresholds, defaultFolderThresholds } from './core/severity'
 export class SizeService implements vscode.Disposable {
   private readonly matchers = new Map<string, ResourceMatcher>()
   private readonly scanner: SizeScanner
+  private disposed = false
   private readonly changes = new vscode.EventEmitter<vscode.Uri[] | undefined>()
   readonly onDidChange = this.changes.event
 
@@ -68,6 +69,14 @@ export class SizeService implements vscode.Disposable {
     return this.scanner.stat(uri.toString())
   }
 
+  async refresh(uris: readonly vscode.Uri[]): Promise<void> {
+    if (this.disposed) { return }
+    const included = uris.filter(uri => !this.isExcluded(uri))
+    if (!included.length) { return }
+    await this.scanner.refresh(included.map(uri => uri.toString()))
+    if (!this.disposed) { this.changes.fire(included) }
+  }
+
   invalidate(uris?: readonly vscode.Uri[], configurationChanged = false): void {
     if (configurationChanged) { this.matchers.clear() }
     if (uris) {
@@ -78,6 +87,7 @@ export class SizeService implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.disposed = true
     this.scanner.invalidate()
     this.changes.dispose()
     this.matchers.clear()

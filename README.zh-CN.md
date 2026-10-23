@@ -151,7 +151,7 @@ out/vs/workbench/workbench.desktop.main.css
 
 文件夹总量包含**所有未被排除的后代文件**，不受显示装饰的扩展名限制。大小是已保存的文件字节数，不是磁盘分配空间。符号链接会被跳过；遇到无法读取的项目，部分总量会标记 `≥`，并在悬停提示中解释。
 
-结果按需计算，最多缓存 10,000 项，最多并发 16 次文件系统操作。保存、新增、删除和重命名后，工作区监听器会刷新文件和祖先目录。外部变更未被捕获时，可执行 **Assets Size: Refresh Sizes**。
+结果按需计算，不同请求共享文件信息与子树统计缓存，最多保留 10,000 个资源条目，最多并发 16 次文件系统操作。保存、新增、删除和重命名后，工作区监听器先更新受影响的分支及已缓存的祖先目录，再刷新 Explorer；未变化的子项统计会被复用，已淘汰的分支会在需要时重新计算。外部变更未被捕获时，可执行 **Assets Size: Refresh Sizes**。
 
 | 情况 | 检查方式 |
 | --- | --- |
@@ -178,6 +178,8 @@ pnpm test
 pnpm package
 ```
 
+`pnpm test` 会先构建扩展，再通过 Vitest 运行核心逻辑、原生补丁和图片压缩测试。已有构建产物时可用 `pnpm test:unit` 直接运行，或用 `pnpm test:watch` 构建一次后监听测试变化。
+
 `pnpm package` 会检查类型、构建并生成 `artifacts/assets-size-<version>.vsix`，可从扩展菜单安装。按 **F5** 会在扩展开发宿主中打开示例工作区。
 
 桌面集成和 UI 检查使用独立的 VS Code 测试副本：
@@ -190,4 +192,4 @@ VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 
 不指定可执行路径时，集成测试下载 VS Code 1.90.2。UI 检查使用临时配置和工作区；补丁检查必须使用可丢弃的应用副本。
 
-发布前请按[发布清单](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md)操作。CI 自动执行 lint、生成 VSIX 并运行单元测试，不执行发布。欢迎通过 [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues)提交可复现的问题和改进建议。
+按[发布指南](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md)完成一次性的 `VSCE_PAT` 配置后，提交代码并运行 `pnpm run publish`。在 bumpp 中选择版本，它会更新 CHANGELOG、提交并推送 `v*` tag。GitHub Actions 随后执行检查、构建并发布到 Marketplace，再创建附带 VSIX 的 GitHub Release。欢迎通过 [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues)提交可复现的问题和改进建议。

@@ -1,7 +1,7 @@
 import type { FileStat, FileSystem, Settings } from '../src/core/types'
 import assert from 'node:assert/strict'
 import { posix } from 'node:path'
-import { it } from 'node:test'
+import { it } from 'vitest'
 import { describeMetrics, fileCount, formatSize, inlineLabel } from '../src/core/format'
 import { ResourceMatcher } from '../src/core/matcher'
 import { ScanCancelled, SizeScanner } from '../src/core/scanner'
@@ -27,6 +27,7 @@ class MemoryFs implements FileSystem {
   readonly entries = new Map<string, FileStat>()
   readonly failures = new Set<string>()
   readonly calls = new Map<string, number>()
+  readonly directoryCalls = new Map<string, number>()
   active = 0
   maxActive = 0
   beforeStat?: (key: string) => Promise<void>
@@ -42,13 +43,14 @@ class MemoryFs implements FileSystem {
       await this.beforeStat?.(key)
       if (this.failures.has(key)) { throw new Error('Permission denied') }
       const entry = this.entries.get(key)
-      if (!entry) { throw new Error('Not found') }
+      if (!entry) { throw Object.assign(new Error('Not found'), { code: 'ENOENT' }) }
       return { ...entry }
     }
     finally { this.active-- }
   }
 
   async readDirectory(key: string): Promise<[string, number][]> {
+    this.directoryCalls.set(key, (this.directoryCalls.get(key) ?? 0) + 1)
     if (this.failures.has(key)) { throw new Error('Permission denied') }
     return [...this.entries].filter(([path]) => path !== key && posix.dirname(path) === key).map(([path, stat]) => [posix.basename(path), stat.type])
   }
@@ -113,7 +115,7 @@ it('unreadable children produce partial totals instead of false complete totals'
   assert.match(describeMetrics(metrics, defaults), /Unreadable items: 2/)
 })
 
-it('concurrent requests share one scan; changed descendants invalidate every cached ancestor', async () => {
+it('concurrent requests share one scan; changed descendants update every cached ancestor', async () => {
   const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 10).file('/other.png', 5)
   const sizes = scanner(fs)
   const [one, two] = await Promise.all([sizes.measure('/assets'), sizes.measure('/assets')])
@@ -123,12 +125,12 @@ it('concurrent requests share one scan; changed descendants invalidate every cac
   fs.file('/assets/a.png', 30)
   sizes.invalidate('/assets/a.png')
   assert.equal((await sizes.measure('/assets')).bytes, 30)
-  assert.equal(fs.calls.get('/assets'), 2)
+  assert.equal(fs.calls.get('/assets'), 1, 'the unchanged ancestor stat stays cached')
   await sizes.measure('/other.png')
   assert.equal(fs.calls.get('/other.png'), 1)
   sizes.invalidate('/asset')
   await sizes.measure('/assets')
-  assert.equal(fs.calls.get('/assets'), 2, 'path prefixes are not mistaken for ancestors')
+  assert.equal(fs.calls.get('/assets'), 1, 'path prefixes are not mistaken for ancestors')
 })
 
 it('deleting a directory drops cached descendants and full invalidation drops all entries', async () => {
@@ -237,4 +239,177 @@ it('count setting changes count display while retaining recursive size', async (
   assert.match(describeMetrics(metrics, { ...defaults, fileCountMode: 'direct' }), /Files: 1 \(direct children\)/)
   assert.doesNotMatch(describeMetrics(metrics, { ...defaults, showFileCount: false }), /Files:/)
   assert.equal(metrics.bytes, 3)
+})
+
+it('file stats and overlapping ancestor scans share cached child results', async () => {
+  const fs = new MemoryFs().directory('/assets').directory('/assets/sub').file('/assets/sub/a.png', 7)
+  fs.beforeStat = () => new Promise(resolve => setImmediate(resolve))
+  const sizes = scanner(fs)
+  await Promise.all([sizes.stat('/assets/sub/a.png'), sizes.measure('/assets'), sizes.measure('/assets/sub')])
+  await sizes.measure('/assets/sub/a.png')
+  assert.equal(fs.calls.get('/assets/sub/a.png'), 1)
+  assert.equal(fs.calls.get('/assets/sub'), 1)
+  assert.equal(fs.directoryCalls.get('/assets/sub'), 1)
+})
+
+it('refresh maintains additions, changes and deletions through all cached ancestors without enumerating them', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/notes.txt', 3).directory('/assets/sub').directory('/assets/sub/deep').file('/assets/sub/deep/a.png', 10).directory('/assets/other').file('/assets/other/b.png', 50)
+  const sizes = scanner(fs)
+  await sizes.measure('/assets')
+  const initialListings = new Map(fs.directoryCalls)
+  fs.file('/assets/sub/deep/a.png', 20).file('/assets/sub/new.txt', 7)
+  await sizes.refresh(['/assets/sub/deep/a.png', '/assets/sub/new.txt', '/assets/sub/deep/a.png'])
+  assert.deepEqual(await sizes.measure('/assets'), { bytes: 80, files: 4, directFiles: 1, directories: 3, skipped: 0, errors: 0, isDirectory: true })
+  assert.equal((await sizes.measure('/assets/sub')).bytes, 27)
+  assert.equal((await sizes.measure('/assets/sub')).directFiles, 1)
+  assert.equal((await sizes.measure('/assets/sub/deep')).bytes, 20)
+  assert.equal((await sizes.measure('/assets/sub/deep/a.png')).bytes, 20)
+  assert.equal(fs.calls.get('/assets/sub/deep/a.png'), 2)
+  assert.equal(fs.calls.get('/assets/notes.txt'), 1)
+  assert.equal(fs.calls.get('/assets/other/b.png'), 1)
+  assert.deepEqual(fs.directoryCalls, initialListings)
+
+  fs.entries.delete('/assets/sub/deep/a.png')
+  fs.entries.delete('/assets/sub/new.txt')
+  await sizes.refresh(['/assets/sub/deep/a.png', '/assets/sub/new.txt'])
+  assert.deepEqual(await sizes.measure('/assets'), { bytes: 53, files: 2, directFiles: 1, directories: 3, skipped: 0, errors: 0, isDirectory: true })
+  assert.equal((await sizes.measure('/assets/sub')).bytes, 0)
+  assert.equal((await sizes.measure('/assets/sub')).files, 0)
+  assert.deepEqual(fs.directoryCalls, initialListings)
+})
+
+it('directory create, rename and delete replace only their affected subtree contributions', async () => {
+  const fs = new MemoryFs().directory('/assets').directory('/public').file('/assets/keep.png', 5)
+  const sizes = scanner(fs)
+  await Promise.all([sizes.measure('/assets'), sizes.measure('/public')])
+  fs.directory('/assets/new').directory('/assets/new/deep').file('/assets/new/deep/a.png', 10)
+  await sizes.refresh(['/assets/new/deep/a.png', '/assets/new', '/assets/new/deep'])
+  assert.deepEqual(await sizes.measure('/assets'), { bytes: 15, files: 2, directFiles: 1, directories: 2, skipped: 0, errors: 0, isDirectory: true })
+  assert.equal(fs.calls.get('/assets/new/deep/a.png'), 1, 'overlapping events scan the new subtree once')
+
+  fs.entries.delete('/assets/new'); fs.entries.delete('/assets/new/deep'); fs.entries.delete('/assets/new/deep/a.png')
+  fs.directory('/public/moved').directory('/public/moved/deep').file('/public/moved/deep/a.png', 10)
+  await sizes.refresh(['/assets/new', '/public/moved'])
+  assert.equal((await sizes.measure('/assets')).bytes, 5)
+  assert.equal((await sizes.measure('/assets')).directories, 0)
+  assert.equal((await sizes.measure('/public')).bytes, 10)
+  assert.equal((await sizes.measure('/public')).directories, 2)
+  await assert.rejects(sizes.measure('/assets/new/deep/a.png'), /Not found/)
+
+  fs.entries.delete('/public/moved'); fs.entries.delete('/public/moved/deep'); fs.entries.delete('/public/moved/deep/a.png')
+  await sizes.refresh(['/public/moved', '/public/moved/deep/a.png'])
+  assert.deepEqual(await sizes.measure('/public'), { bytes: 0, files: 0, directFiles: 0, directories: 0, skipped: 0, errors: 0, isDirectory: true })
+  assert.equal(fs.directoryCalls.get('/assets'), 1)
+  assert.equal(fs.directoryCalls.get('/public'), 1)
+  assert.equal(fs.calls.get('/assets/keep.png'), 1)
+})
+
+it('ancestor contributions survive child LRU eviction and a missing intermediate cache entry', async () => {
+  const fs = new MemoryFs().directory('/assets').directory('/assets/sub').file('/assets/sub/a.png', 1).directory('/assets/other').file('/assets/other/b.png', 20).file('/outside.png', 5)
+  const sizes = new SizeScanner(fs, () => false, 2)
+  await sizes.measure('/assets')
+  await sizes.measure('/outside.png')
+  fs.file('/assets/sub/a.png', 10)
+  await sizes.refresh(['/assets/sub/a.png'])
+  assert.equal((await sizes.measure('/assets')).bytes, 30)
+  assert.equal(fs.calls.get('/assets/other/b.png'), 1, 'evicted siblings retain their aggregate contribution')
+  assert.equal(fs.directoryCalls.get('/assets'), 1)
+  assert.equal(fs.directoryCalls.get('/assets/sub'), 2, 'an evicted changed branch is safely rebuilt')
+})
+
+it('changes during an incremental refresh cancel old results and retain every dirty branch', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 1).file('/assets/b.png', 2)
+  const sizes = scanner(fs)
+  await sizes.measure('/assets')
+  let release: () => void = () => {}
+  let started: () => void = () => {}
+  const entered = new Promise<void>((resolve) => { started = resolve })
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  fs.beforeStat = async (key) => { if (key === '/assets/a.png') { started(); await gate } }
+  fs.file('/assets/a.png', 10)
+  sizes.invalidate('/assets/a.png')
+  const old = sizes.measure('/assets')
+  const cancelled = assert.rejects(old, ScanCancelled)
+  await entered
+  fs.file('/assets/b.png', 20)
+  const refresh = sizes.refresh(['/assets/b.png'])
+  release()
+  await Promise.all([cancelled, refresh])
+  assert.equal((await sizes.measure('/assets')).bytes, 30)
+  assert.equal(fs.directoryCalls.get('/assets'), 1)
+})
+
+it('file and directory replacements keep direct counts, subtree counts and symlink skips correct', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/item', 5)
+  const sizes = scanner(fs)
+  await sizes.measure('/assets')
+  fs.directory('/assets/item').file('/assets/item/a.png', 10)
+  await sizes.refresh(['/assets/item'])
+  assert.deepEqual(await sizes.measure('/assets'), { bytes: 10, files: 1, directFiles: 0, directories: 1, skipped: 0, errors: 0, isDirectory: true })
+  fs.entries.delete('/assets/item/a.png')
+  fs.file('/assets/item', 7)
+  await sizes.refresh(['/assets/item'])
+  assert.deepEqual(await sizes.measure('/assets'), { bytes: 7, files: 1, directFiles: 1, directories: 0, skipped: 0, errors: 0, isDirectory: true })
+  fs.link('/assets/item')
+  await sizes.refresh(['/assets/item'])
+  assert.deepEqual(await sizes.measure('/assets'), { bytes: 0, files: 0, directFiles: 0, directories: 0, skipped: 1, errors: 0, isDirectory: true })
+})
+
+it('refresh keeps permission failures partial, retries later changes, and ignores excluded paths', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 1).file('/assets/keep.png', 2)
+  const sizes = scanner(fs)
+  await sizes.measure('/assets')
+  fs.failures.add('/assets/a.png')
+  await sizes.refresh(['/assets/a.png'])
+  assert.equal((await sizes.measure('/assets')).bytes, 2)
+  assert.equal((await sizes.measure('/assets')).errors, 1)
+  fs.failures.delete('/assets/a.png')
+  fs.file('/assets/a.png', 10)
+  await sizes.refresh(['/assets/a.png'])
+  assert.equal((await sizes.measure('/assets')).bytes, 12)
+  assert.equal((await sizes.measure('/assets')).errors, 0)
+  const calls = new Map(fs.calls)
+  await sizes.refresh(['/assets/node_modules/ignored.png'])
+  assert.deepEqual(fs.calls, calls)
+  assert.equal(fs.directoryCalls.get('/assets'), 1)
+})
+
+it('batched roots distinguish path prefixes and refresh does not scan unobserved resources', async () => {
+  const fs = new MemoryFs().directory('/assets').file('/assets/a.png', 1).directory('/assets-other').file('/assets-other/b.png', 2).directory('/public').file('/public/new.png', 3)
+  const sizes = scanner(fs)
+  await Promise.all([sizes.measure('/assets'), sizes.measure('/assets-other')])
+  fs.file('/assets/a.png', 10).file('/assets-other/b.png', 20)
+  await sizes.refresh(['/assets-other/b.png', '/assets', '/assets/a.png', '/public/new.png'])
+  assert.equal((await sizes.measure('/assets')).bytes, 10)
+  assert.equal((await sizes.measure('/assets-other')).bytes, 20)
+  assert.equal(fs.calls.has('/public/new.png'), false)
+  assert.equal(fs.calls.get('/assets/a.png'), 2)
+})
+
+it('deep directory trees and URI keys retain incremental ancestor totals', async () => {
+  const fs = new MemoryFs()
+  let deepest = '/assets'
+  fs.directory(deepest)
+  for (let index = 0; index < 400; index++) {
+    deepest = `${deepest}/d`
+    fs.directory(deepest)
+  }
+  fs.file(`${deepest}/a.png`, 1)
+  const sizes = scanner(fs)
+  assert.equal((await sizes.measure('/assets')).directories, 400)
+  fs.file(`${deepest}/a.png`, 2)
+  await sizes.refresh([`${deepest}/a.png`])
+  assert.equal((await sizes.measure('/assets')).bytes, 2)
+  assert.equal(fs.directoryCalls.get('/assets'), 1)
+
+  const uriFs: FileSystem = {
+    stat: key => fs.stat(new URL(key).pathname),
+    readDirectory: key => fs.readDirectory(new URL(key).pathname),
+    join: (key, name) => `${key.replace(/\/$/, '')}/${name}`,
+  }
+  const uriSizes = new SizeScanner(uriFs, () => false)
+  await uriSizes.measure('vscode-remote://host/assets')
+  fs.file(`${deepest}/a.png`, 3)
+  await uriSizes.refresh([`vscode-remote://host${deepest}/a.png`])
+  assert.equal((await uriSizes.measure('vscode-remote://host/assets')).bytes, 3)
 })

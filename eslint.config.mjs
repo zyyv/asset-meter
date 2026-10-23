@@ -21,8 +21,6 @@ export default antfu(
       // Existing Node entry points rely on the standard globals.
       'node/prefer-global/buffer': 'off',
       'node/prefer-global/process': 'off',
-      // Tests run with Node's built-in test runner, not Vitest.
-      'test/no-import-node-test': 'off',
     },
   },
   {

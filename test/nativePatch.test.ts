@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
-import { it } from 'node:test'
 import { runInNewContext, Script } from 'node:vm'
+import { it } from 'vitest'
 import { getNativePatchStatus, installNativePatch, patchExtensionHost, patchWorkbench, restoreNativePatch } from '../src/nativePatch'
 
 const host = `class Decoration { static validate(t) { if(typeof t.badge=="string"){let e=t.badge.length?1:0;if(e<t.badge.length&&(e+=1),t.badge.length>e)throw new Error("The 'badge'-property must be undefined or a short character")}return true} } globalThis.validate = Decoration.validate;`

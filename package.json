@@ -338,14 +338,16 @@
     "watch": "node scripts/prepare-build.mjs && tsdown --watch",
     "typecheck": "tsc --noEmit",
     "check": "pnpm typecheck",
-    "lint": "eslint src test scripts eslint.config.mjs tsdown.config.mjs",
+    "lint": "eslint src test scripts bump.config.mjs eslint.config.mjs tsdown.config.mjs vitest.config.mjs",
     "lint:fix": "pnpm lint --fix",
-    "test": "pnpm build && node --import tsx --test test/core.test.ts test/nativePatch.test.ts test/compression.test.ts",
+    "test": "pnpm build && pnpm test:unit",
     "test:integration": "pnpm build && node scripts/run-integration.mjs",
     "test:ui": "node scripts/check-native-view.mjs",
     "vscode:prepublish": "pnpm typecheck && pnpm build",
     "package": "node scripts/package.mjs",
-    "test:unit": "node --import tsx --test test/core.test.ts test/nativePatch.test.ts test/compression.test.ts",
+    "publish": "bumpp",
+    "test:unit": "vitest run",
+    "test:watch": "pnpm build && vitest",
     "release:check": "node scripts/check-release.mjs",
     "release:prepare": "pnpm release:check && pnpm lint && pnpm package && pnpm test:unit",
     "test:compression:ui": "pnpm build && node scripts/check-compression-view.mjs"
@@ -363,11 +365,12 @@
     "@types/vscode": "1.90.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
+    "bumpp": "^12.3.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
     "playwright": "^1.64.1",
     "tsdown": "^0.23.1",
-    "tsx": "^4.23.15",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
   }
 }

@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import test from 'node:test'
+import { it } from 'vitest'
 import { compressedName, imageFormat, maxInputBytes, validateImage } from '../src/compression/image'
 import { startCompression } from '../src/compression/runner'
 
 const fixture = (name: string) => readFile(path.join(__dirname, 'fixtures', name))
 const dist = path.resolve(__dirname, '../dist')
 
-test('supported image formats and Save As names preserve extension and basename', () => {
+it('supported image formats and Save As names preserve extension and basename', () => {
   assert.equal(imageFormat('/assets/HERO.JPEG'), 'jpeg')
   assert.equal(imageFormat('/assets/hero.jpe'), 'jpeg')
   assert.equal(imageFormat('/assets/logo.PNG'), 'png')
@@ -19,7 +19,7 @@ test('supported image formats and Save As names preserve extension and basename'
 })
 
 for (const [name, format] of [['sample.jpg', 'jpeg'], ['sample.png', 'png'], ['sample.webp', 'webp']] as const) {
-  test(`packaged WASM compresses ${format} without changing the source bytes`, async () => {
+  it(`packaged WASM compresses ${format} without changing the source bytes`, async () => {
     const original = await fixture(name)
     const snapshot = Buffer.from(original)
     const output = await startCompression(dist, original, format, 75).result
@@ -29,13 +29,13 @@ for (const [name, format] of [['sample.jpg', 'jpeg'], ['sample.png', 'png'], ['s
   })
 }
 
-test('compression can be cancelled and the worker is terminated', async () => {
+it('compression can be cancelled and the worker is terminated', async () => {
   const job = startCompression(dist, await fixture('sample.png'), 'png', 75)
   job.cancel()
   await assert.rejects(job.result, /cancelled/)
 })
 
-test('JPEG EXIF orientation is applied before metadata is removed', async () => {
+it('jpeg EXIF orientation is applied before metadata is removed', async () => {
   const jpeg = await fixture('sample.jpg')
   // Little-endian TIFF, one Orientation entry: rotate 90 degrees clockwise.
   const exif = Buffer.from('45786966000049492a0008000000010012010300010000000600000000000000', 'hex')
@@ -55,7 +55,7 @@ test('JPEG EXIF orientation is applied before metadata is removed', async () => 
   assert.deepEqual(dimensions, [160, 256], 'The displayed orientation is preserved in the encoded pixels')
 })
 
-test('animation is rejected before a static encoder can discard frames', async () => {
+it('animation is rejected before a static encoder can discard frames', async () => {
   const png = await fixture('sample.png')
   const animation = Buffer.alloc(20)
   animation.writeUInt32BE(8); animation.write('acTL', 4)
@@ -67,7 +67,7 @@ test('animation is rejected before a static encoder can discard frames', async (
   assert.throws(() => validateImage(animatedWebp, 'webp'), /Animated WebP/)
 })
 
-test('invalid, truncated, oversized and decompression-bomb inputs are rejected', async () => {
+it('invalid, truncated, oversized and decompression-bomb inputs are rejected', async () => {
   assert.throws(() => validateImage(new Uint8Array(), 'png'), /50 MiB/)
   assert.throws(() => validateImage(Buffer.alloc(maxInputBytes + 1), 'jpeg'), /50 MiB/)
   assert.throws(() => validateImage(Buffer.from('not a PNG image'), 'png'), /not a valid/)

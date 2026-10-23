@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+
+      - name: Verify release version
+        id: version
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { appendFileSync, readFileSync } from 'node:fs'
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'))
+          assert.match(version, /^\d+\.\d+\.\d+$/, 'Marketplace versions must use major.minor.patch.')
+          assert.equal(process.env.GITHUB_REF_NAME, `v${version}`, 'The tag must match package.json version.')
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`)
+          NODE
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release:prepare
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: assets-size-${{ steps.version.outputs.version }}
+          path: artifacts/assets-size-${{ steps.version.outputs.version }}.vsix
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish to Visual Studio Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo '::error::Add the VSCE_PAT repository secret with Marketplace publishing permission. See docs/PUBLISHING.md.'
+            exit 1
+          fi
+          pnpm exec vsce publish --packagePath "artifacts/assets-size-${VERSION}.vsix" --skip-duplicate
+
+      - name: Create GitHub Release and upload VSIX
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! gh release view "v${VERSION}" > /dev/null 2>&1; then
+            gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" --generate-notes
+          fi
+          gh release upload "v${VERSION}" "artifacts/assets-size-${VERSION}.vsix" --clobber

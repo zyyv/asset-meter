@@ -1,6 +1,16 @@
-# Assets Size 发布清单
+# Assets Size 发布指南
 
-目标：先生成并验证可安装的 VSIX，再上传 Marketplace。当前扩展版本为 `0.3.0`，`package.json` 中的发布者已准备为 `zyyv`。首次发布前，需要在当前 Microsoft 账号下实际创建并拥有该 Publisher。
+完成下面的首次配置并提交代码后，每次发布只需一个命令：
+
+```sh
+pnpm run publish
+```
+
+在 bumpp 中选择 `patch`、`minor`、`major` 或明确的 `x.y.z` 版本并确认，即可自动更新版本、提交并推送 `v<version>` tag。GitHub Actions 执行发布资料检查、lint、类型检查、构建打包和单元测试，通过后发布到 Visual Studio Marketplace，并创建附带 VSIX 的 GitHub Release。
+
+命令要求 Git 工作区干净，请先提交功能改动。若 CHANGELOG 有 `## Unreleased`，会将该节转为新版本；否则从最近一个可达的 `v*` tag 之后的 Git 提交生成记录，首次无 tag 时使用已有提交。已写好的目标版本记录会直接保留。Marketplace 不接受带 `-beta` 等后缀的版本。
+
+使用 `pnpm run publish` 调用项目脚本；`pnpm publish` 是 pnpm 内置的 npm 发布命令。
 
 ## 1. 创建发布者并确定扩展身份
 
@@ -30,11 +40,11 @@ pnpm release:check
 
 README 已链接 [zyyv/vscode-assets-size](https://github.com/zyyv/vscode-assets-size)。提交并推送这些改动后，再发布到商店：`vsce` 会把相对图片路径转换为仓库的 HTTPS 地址，因此仓库对应分支上的图片必须可访问。默认使用 `main` 分支。
 
-版本号继续使用 `0.3.0`，适合该版本尚未正式发布的情况。如果这个版本已经发布过，需要先更新 `package.json` 的版本并补充 CHANGELOG。VSIX 文件名会自动跟随版本变化。
+后续版本由 bumpp 更新，无需手改 `package.json`。可以提前将更新说明写入 CHANGELOG 的 `## Unreleased` 节。VSIX 文件名会自动跟随版本变化。
 
 ## 3. 构建、检查并试装
 
-使用 Node.js 24+ 与 `package.json` 指定的 pnpm。首次安装依赖后执行一键准备：
+使用 Node.js 24.11+ 与 `package.json` 指定的 pnpm。发布工作流会自动验证；如需提前在本地试装，可以执行：
 
 ```sh
 pnpm install --frozen-lockfile
@@ -72,19 +82,21 @@ VSCODE_EXECUTABLE_PATH="/path/to/patched/disposable/Code" pnpm test:ui
 VSCODE_EXECUTABLE_PATH="/path/to/disposable/Code" pnpm test:compression:ui
 ```
 
-GitHub Actions 会在 push、pull request 和手动运行时执行 lint、打包与单元测试，并保留 VSIX 14 天。工作流允许本地 Publisher 占位值以便开发，**不会发布**；正式上传前仍需运行不带放宽参数的 `pnpm release:prepare`。
+日常 `ci.yml` 在 push、pull request 和手动运行时执行检查并保留 VSIX 14 天。`release.yml` 仅由推送 `v*` tag 触发，要求 tag 与 manifest 版本一致，使用严格的发布资料检查，并在验证通过后发布同一份 VSIX。
 
-## 4. 上传到 Marketplace
+## 4. 首次配置 GitHub Actions 认证
 
-推荐首次发布通过 [发布者管理页](https://marketplace.visualstudio.com/manage)完成：选择 Publisher → **New extension → Visual Studio Code** → 上传刚验证的 VSIX。检查商店预览中的名称、图标、README、许可证、仓库和 Issues 链接，再提交发布。更新现有扩展时使用该扩展的更新入口。
+按 [VS Code 官方 PAT 配置说明](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#get-a-personal-access-token)创建具有 **Marketplace → Manage** 权限的 Azure DevOps PAT。使用的账号必须有 `zyyv` Publisher 的发布权限。
 
-仅修改 `package.json` 后，之前生成的 VSIX 不会自动更新：必须重新运行 `pnpm release:prepare`，上传新包。
+在仓库 **Settings → Secrets and variables → Actions → New repository secret** 添加 `VSCE_PAT`，值填入该 PAT。不要将 token 写入源码或提交到 Git。GitHub Release 使用工作流自动提供的 `GITHUB_TOKEN`，无需额外配置 GitHub token。
 
-CLI 发布是可选项。请按 [VS Code 官方发布文档](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)配置受支持的认证方式。官方目前推荐 Microsoft Entra ID 自动发布，并说明全局 Azure DevOps PAT 将于 **2026-12-01** 退役。首次手动上传 VSIX 不需要把 PAT 保存到项目或聊天中。
+提交发布配置和功能改动后，在 `main` 分支运行 `pnpm run publish`，选择版本并确认即可。在仓库 **Actions → Release** 查看进度。如果 Marketplace 已发布而 GitHub Release 步骤失败，可重新运行失败的工作流；`--skip-duplicate` 会跳过已存在的商店版本，并补传 GitHub Release 附件。
+
+当前工作流使用 PAT。官方说明全局 Azure DevOps PAT 将于 **2026-12-01** 退役；届时需按[官方自动发布说明](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace)迁移到 Microsoft Entra ID，并调整发布步骤的认证方式。
 
 ## 5. 发布后核对
 
-搜索 **Assets Size**，在干净配置中从 Marketplace 安装，确认版本与最终 VSIX 一致。在 GitHub 为同一版本创建 Release 并附上 VSIX 和更新说明，将实际 Marketplace 链接加入 README。商店 ID 必须使用已经创建的 Publisher ID，当前不预填无法验证的安装链接。
+搜索 **Assets Size**，在干净配置中从 Marketplace 安装，确认版本与 GitHub Release 附带的 VSIX 一致。将实际 Marketplace 链接加入 README。商店 ID 必须使用已经创建的 Publisher ID，当前不预填无法验证的安装链接。
 
 ## Native patch recovery
 

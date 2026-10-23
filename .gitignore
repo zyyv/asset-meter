@@ -2,6 +2,7 @@ node_modules/
 dist/
 artifacts/
 .vscode-test/
+.vitest/
 *.vsix
 .DS_Store
 .pnpm-store/
