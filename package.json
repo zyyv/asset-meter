@@ -4,7 +4,7 @@
   "displayName": "Assets Size",
   "version": "0.3.0",
   "packageManager": "pnpm@12.14.0",
-  "description": "See asset sizes and folder counts in Explorer. Compress JPEG, PNG and WebP locally, with a visual comparison before saving.",
+  "description": "See asset sizes and folder counts in Explorer. Compress JPEG, PNG and WebP with jSquash or TinyPNG, and compare before saving.",
   "license": "MIT",
   "icon": "images/icon.png",
   "galleryBanner": {
@@ -306,13 +306,26 @@
           "default": 400,
           "description": "Delay in milliseconds for batching filesystem updates."
         },
+        "assetSize.compression.plugin": {
+          "type": "string",
+          "default": "jsquash",
+          "scope": "resource",
+          "description": "Preferred compression plugin ID, shown first in the plugin picker. Built-in plugins: jsquash (local) and tinypng (cloud). Registered plugins can also be selected."
+        },
+        "assetSize.compression.tinypng.apiKey": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "ignoreSync": true,
+          "description": "TinyPNG API key. Configure in User Settings; stored as plain text and excluded from Settings Sync. Selecting TinyPNG uploads images to api.tinify.com and uses your API quota."
+        },
         "assetSize.compression.quality": {
           "type": "integer",
           "minimum": 1,
           "maximum": 100,
           "default": 75,
           "scope": "resource",
-          "description": "JPEG and WebP compression quality. PNG compression is lossless and ignores this setting."
+          "description": "jSquash JPEG and WebP compression quality. jSquash PNG is lossless. TinyPNG chooses quality automatically and ignores this setting."
         },
         "assetSize.compression.saveBehavior": {
           "type": "string",

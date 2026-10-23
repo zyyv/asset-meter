@@ -14,7 +14,7 @@
 
 直接在 VS Code 资源管理器中查看文件大小和文件夹统计，找到占空间的资源。需要优化图片时，在编辑器里压缩 JPEG、PNG 和 WebP，对比效果后再保存。
 
-**VS Code 1.90+ · 桌面扩展 · 本地处理 · MIT 开源**
+**VS Code 1.90+ · 桌面扩展 · 插件式压缩 · MIT 开源**
 
 ## 主要功能
 
@@ -22,7 +22,7 @@
 - **颜色提示大文件**：可配置黄色、橙色、红色阈值，只改变体积文字颜色，保留文件名主题和 Git 状态颜色。
 - **先对比，再保存**：支持图片并排对比、滑块对比，以及适应窗口和 100% 缩放。
 - **按项目定制**：自定义扩展名、文件夹名、排除规则、计量单位和精度；保存、创建、删除、重命名后自动刷新。
-- **无需上传**：压缩使用随扩展打包的 WebAssembly 编解码器；运行时不上传文件、不采集遥测、不发起外部网络请求。
+- **可选压缩插件**：默认使用本地 jSquash，也可配置 API Key 使用 TinyPNG 云端压缩；扩展不采集遥测。
 
 ```text
 ▾ assets                         3 files · 7.9 MB
@@ -50,19 +50,26 @@
 
 *截图来自 0.3.0 开发构建，拍摄时尚未统一为 Assets Size 名称。*
 
-1. 查看原始体积、压缩后体积和节省比例；切换并排或滑块对比，必要时以 100% 缩放检查细节。
-2. 点击 **Save Result…**，选择 **Save As** 或 **Overwrite Original**，再选择 **Allow Once** 或 **Always Allow**。
-3. 点击 **Discard** 可关闭结果而不保存。保存成功后，Explorer 体积自动刷新。
+1. 在选择列表中选择压缩插件：**jSquash** 在本地运行，**TinyPNG** 将图片上传至其 API。对比页也可通过 **Plugin** 下拉框选择插件，再点击 **Compress Again** 重新压缩。
+2. 查看原始体积、压缩后体积和节省比例；切换并排或滑块对比，必要时以 100% 缩放检查细节。
+3. 点击 **Save Result…**，选择 **Save As** 或 **Overwrite Original**，再选择 **Allow Once** 或 **Always Allow**。
+4. 点击 **Discard** 可关闭结果而不保存。保存成功后，Explorer 体积自动刷新。
 
 **Save As** 默认建议 `name.compressed.ext`，目标文件已存在时会再次确认。**Overwrite Original** 会拒绝覆盖压缩后已变化或有未保存编辑的原文件。**Always Allow** 将保存方式记入用户设置，但每次压缩仍需点击 **Save Result…**。将 `assetSize.compression.saveBehavior` 重设为 `"ask"` 可撤销记住的权限。
 
-| 格式 | 编解码器 | 行为 |
+| 格式 | jSquash 编解码器 | 行为 |
 | --- | --- | --- |
 | JPEG（`.jpg`、`.jpeg`、`.jpe`） | MozJPEG | 有损压缩，支持质量设置 |
 | PNG | Oxipng | 无损优化，不使用质量设置 |
 | WebP | libwebp | 有损压缩，支持质量设置 |
 
-压缩保留文件格式和图片尺寸；JPEG 方向会应用到像素。不保证保留元数据。不支持动画 PNG/WebP、超过 50 MiB 的输入或超过 4000 万像素的图片。如果结果没有变小，则保留原始字节。压缩在可取消的后台 worker 中运行，使用本地打包的 [jSquash 编解码器](https://github.com/jamsinclair/jSquash)。
+压缩保留文件格式和图片尺寸；JPEG 方向会应用到像素。不保证保留元数据。不支持动画 PNG/WebP、超过 50 MiB 的输入或超过 4000 万像素的图片。如果结果没有变小，保存按钮会禁用。jSquash 在可取消的后台 worker 中运行，使用本地打包的[编解码器](https://github.com/jamsinclair/jSquash)。TinyPNG 支持同样的三种格式，自动选择压缩质量。
+
+使用 TinyPNG 时，先[获取 API Key](https://tinypng.com/developers)，再在**用户设置**中填写 `assetSize.compression.tinypng.apiKey`。Key 以明文存储，不参与 Settings Sync，也不会发送到对比页。每次压缩都会上传原始图片并使用 TinyPNG API 额度；仅切换下拉框不会发起请求。将 `assetSize.compression.plugin` 设为 `"tinypng"`，即可在选择列表中优先显示它。请求遵循 [TinyPNG HTTP API](https://tinypng.com/developers/reference)。
+
+API 调用失败会提示错误，原文件保持不变。**Compress Again** 失败时保留上一次成功的结果，并恢复操作按钮。可手动重试或切换插件，不会自动重试请求。原图和压缩结果都成功解码后才允许保存，无法解码的损坏结果不能通过对比页保存。
+
+其他扩展可通过 `await vscode.extensions.getExtension('zyyv.vscode-asset-size').activate()` 获取 API，调用 `api.registerCompressionPlugin(plugin)` 并将返回的 disposable 加入订阅。插件实现 `src/compression/plugins.ts` 中的 `CompressionPlugin` 接口：提供 ID、名称、说明、支持的格式、`describe(input)`，以及返回 `{ result: Promise<Uint8Array>, cancel() }` 的 `compress(input, context)`。选择列表和对比页会自动发现已注册插件；插件负责配置与编码，共用流程负责校验输入输出、对比和保存。
 
 ## 配置
 
@@ -77,6 +84,7 @@
   "assetSize.showFileCount": true,
   "assetSize.fileCountMode": "recursive",
   "assetSize.units": "decimal",
+  "assetSize.compression.plugin": "jsquash",
   "assetSize.compression.quality": 75
 }
 ```
@@ -98,7 +106,9 @@
 | `assetSize.fileColorThresholdsMiB` | `[0.25, 1, 5]` | 文件的黄色、橙色、红色阈值，自动升序排序。 |
 | `assetSize.folderColorThresholdsMiB` | `[10, 50, 100]` | 文件夹的黄色、橙色、红色阈值，自动升序排序。 |
 | `assetSize.refreshDelay` | `400` | 文件系统事件批量刷新的延迟，范围为 100–5000 毫秒。 |
-| `assetSize.compression.quality` | `75` | JPEG/WebP 质量，范围为 1–100；PNG 始终无损。 |
+| `assetSize.compression.plugin` | `"jsquash"` | 在选择列表中优先显示的插件：`jsquash`、`tinypng` 或其他已注册插件 ID。 |
+| `assetSize.compression.tinypng.apiKey` | `""` | 仅在用户设置中配置 TinyPNG API Key；明文存储，不参与 Settings Sync。 |
+| `assetSize.compression.quality` | `75` | jSquash JPEG/WebP 质量，范围为 1–100；jSquash PNG 无损，TinyPNG 忽略此设置。 |
 | `assetSize.compression.saveBehavior` | `"ask"` | `"ask"`、`"saveAs"` 或 `"overwrite"`；仅用户设置可授予记住的保存权限。 |
 
 默认文件扩展名：`.jpg`、`.jpeg`、`.png`、`.gif`、`.webp`、`.avif`、`.svg`、`.ico`、`.bmp`、`.heic`、`.mp4`、`.webm`、`.mov`、`.mp3`、`.wav`、`.ogg`、`.woff`、`.woff2`、`.ttf`、`.otf`、`.pdf`、`.zip`。
@@ -163,7 +173,7 @@ out/vs/workbench/workbench.desktop.main.css
 
 ## 隐私与许可
 
-扩展运行时不上传文件、不收集遥测、不发起外部网络请求。远程工作区的处理发生在对应工作区的扩展宿主。图片编解码器随扩展一起分发，图片字节不会被发送到在线服务。
+扩展不采集遥测。jSquash 在本地处理图片，不上传文件、不发起外部网络请求。选择 TinyPNG 会使用你的 API Key，通过 HTTPS 将所选图片上传到 `api.tinify.com`。其他已注册插件可能使用不同服务，请查看对应说明。远程工作区中的处理及 API 请求发生在对应工作区的扩展宿主。
 
 Assets Size 使用 [MIT 许可证](https://github.com/zyyv/vscode-assets-size/blob/main/LICENSE)。随扩展分发的编解码器和依赖请参阅[第三方许可说明](https://github.com/zyyv/vscode-assets-size/blob/main/THIRD_PARTY_NOTICES.md)。
 

@@ -1,3 +1,4 @@
+import type { CompressionPlugin } from './compression/plugins'
 import type { Metrics } from './core/types'
 import * as vscode from 'vscode'
 import { ImageCompression } from './compression/preview'
@@ -7,7 +8,11 @@ import { SizeService } from './service'
 
 export interface AssetSizeApi {
   getSize: (uri: vscode.Uri) => Promise<Metrics | undefined>
+  registerCompressionPlugin: (plugin: CompressionPlugin) => vscode.Disposable
 }
+
+export type { CompressionContext, CompressionInput, CompressionPlugin } from './compression/plugins'
+export type { CompressionJob } from './compression/runner'
 
 export async function activate(context: vscode.ExtensionContext): Promise<AssetSizeApi> {
   const service = new SizeService()
@@ -114,5 +119,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
   }
   return {
     getSize: async uri => service.isExcluded(uri) || !service.settings(uri).enabled ? undefined : service.measure(uri),
+    registerCompressionPlugin: plugin => compression.plugins.register(plugin),
   }
 }
