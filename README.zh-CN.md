@@ -188,9 +188,9 @@ pnpm test
 pnpm package
 ```
 
-`pnpm test` 会先构建扩展，再通过 Vitest 运行核心逻辑、原生补丁和图片压缩测试。已有构建产物时可用 `pnpm test:unit` 直接运行，或用 `pnpm test:watch` 构建一次后监听测试变化。
+`pnpm test` 会先构建扩展，再通过 Vitest 运行核心逻辑、原生补丁和图片压缩测试。已有构建产物时，用 `pnpm exec vitest run` 重新运行测试，或用 `pnpm exec vitest` 监听测试变化。自动修复 lint 问题用 `pnpm lint --fix`。
 
-`pnpm package` 会检查类型、构建并生成 `artifacts/assets-size-<version>.vsix`，可从扩展菜单安装。按 **F5** 会在扩展开发宿主中打开示例工作区。
+`pnpm package` 会通过 `vscode:prepublish` 钩子检查类型、构建，并在仓库根目录生成 `vscode-asset-size-<version>.vsix`，可从扩展菜单安装。按 **F5** 会在扩展开发宿主中打开示例工作区。
 
 桌面集成和 UI 检查使用独立的 VS Code 测试副本：
 
@@ -202,4 +202,4 @@ VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 
 不指定可执行路径时，集成测试下载 VS Code 1.90.2。UI 检查使用临时配置和工作区；补丁检查必须使用可丢弃的应用副本。
 
-按[发布指南](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md)配置发布者以及仓库密钥 `VSCE_TOKEN` 和 `OVSX_TOKEN` 后，提交代码并运行 `pnpm release`。在 bumpp 中选择版本，它会更新 CHANGELOG、提交并推送 `v*` tag。GitHub Actions 随后执行检查和构建，通过 `pnpm run publish` 将同一份 VSIX 发布到 Visual Studio Marketplace 和 Open VSX，再创建附带 VSIX 的 GitHub Release。欢迎通过 [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues)提交可复现的问题和改进建议。
+按[发布指南](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md)配置发布者以及仓库密钥 `VSCE_TOKEN` 和 `OVSX_TOKEN` 后，提交代码并运行 `pnpm release`。在 bumpp 中选择版本，它会更新 `package.json`、提交并推送 `v*` tag。GitHub Actions 随后执行检查和打包，将同一份 VSIX 发布到 Visual Studio Marketplace 和 Open VSX，再创建附带自动生成的更新说明及 VSIX 的 GitHub Release。`CHANGELOG.md` 按需手动维护。欢迎通过 [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues)提交可复现的问题和改进建议。

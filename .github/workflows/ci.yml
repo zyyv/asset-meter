@@ -2,6 +2,8 @@ name: Check and package
 
 on:
   push:
+    branches:
+      - '**'
   pull_request:
   workflow_dispatch:
 
@@ -19,13 +21,12 @@ jobs:
           package-manager-cache: false
       - uses: pnpm/action-setup@v6
       - run: pnpm install --frozen-lockfile
-      - run: pnpm release:check --allow-local-publisher
       - run: pnpm lint
       - run: pnpm package
-      - run: pnpm test:unit
+      - run: pnpm exec vitest run
       - uses: actions/upload-artifact@v7
         with:
           name: assets-size-vsix
-          path: artifacts/assets-size-*.vsix
+          path: vscode-asset-size-*.vsix
           if-no-files-found: error
           retention-days: 14

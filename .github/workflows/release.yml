@@ -37,20 +37,20 @@ jobs:
           NODE
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm release:prepare
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: assets-size-${{ steps.version.outputs.version }}
-          path: artifacts/assets-size-${{ steps.version.outputs.version }}.vsix
-          if-no-files-found: error
-          retention-days: 14
+      - run: pnpm lint
+      - run: pnpm package
+      - run: pnpm exec vitest run
 
       - name: Publish to Visual Studio Marketplace and Open VSX
         env:
-          VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}
-          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
-        run: pnpm run publish
+          VSCE_PAT: ${{ secrets.VSCE_TOKEN }}
+          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          : "${VSCE_PAT:?Set the VSCE_TOKEN repository secret.}"
+          : "${OVSX_PAT:?Set the OVSX_TOKEN repository secret.}"
+          pnpm exec vsce publish --packagePath "vscode-asset-size-${VERSION}.vsix" --skip-duplicate
+          pnpm exec ovsx publish "vscode-asset-size-${VERSION}.vsix" --skip-duplicate
 
       - name: Create GitHub Release and upload VSIX
         env:
@@ -61,4 +61,4 @@ jobs:
           if ! gh release view "v${VERSION}" > /dev/null 2>&1; then
             gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" --generate-notes
           fi
-          gh release upload "v${VERSION}" "artifacts/assets-size-${VERSION}.vsix" --clobber
+          gh release upload "v${VERSION}" "vscode-asset-size-${VERSION}.vsix" --clobber

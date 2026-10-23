@@ -188,9 +188,9 @@ pnpm test
 pnpm package
 ```
 
-`pnpm test` builds the extension and runs the core, native patch and compression tests with Vitest. Use `pnpm test:unit` to run against an existing build, or `pnpm test:watch` to build once and watch the tests.
+`pnpm test` builds the extension and runs the core, native patch and compression tests with Vitest. After a build, use `pnpm exec vitest run` to rerun tests or `pnpm exec vitest` to watch them. Use `pnpm lint --fix` to fix lint issues.
 
-`pnpm package` typechecks and builds, then writes `artifacts/assets-size-<version>.vsix`. Install it from the Extensions menu. Press **F5** to launch the example workspace in an Extension Development Host.
+`pnpm package` typechecks and builds through the `vscode:prepublish` hook, then writes `vscode-asset-size-<version>.vsix` in the repository root. Install it from the Extensions menu. Press **F5** to launch the example workspace in an Extension Development Host.
 
 For desktop integration and UI checks, use a disposable VS Code installation:
 
@@ -202,4 +202,4 @@ VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 
 Without an executable path, integration tests download VS Code 1.90.2. UI checks use temporary profiles and workspaces; native patch checks must target a disposable application copy.
 
-After configuring the publishers and the `VSCE_TOKEN` and `OVSX_TOKEN` repository secrets in the [publishing guide](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md), commit your changes and run `pnpm release`. Choose a version in bumpp; it updates the changelog, commits and pushes a `v*` tag. GitHub Actions checks and builds the extension, then runs `pnpm run publish` to publish the same VSIX to Visual Studio Marketplace and Open VSX and creates a GitHub Release with the VSIX attached. Contributions and reproducible bug reports are welcome in [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues).
+After configuring the publishers and the `VSCE_TOKEN` and `OVSX_TOKEN` repository secrets in the [publishing guide](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md), commit your changes and run `pnpm release`. Choose a version in bumpp; it updates `package.json`, commits and pushes a `v*` tag. GitHub Actions checks and packages the extension, publishes the same VSIX to Visual Studio Marketplace and Open VSX, and creates a GitHub Release with generated notes and the VSIX attached. Maintain `CHANGELOG.md` manually when needed. Contributions and reproducible bug reports are welcome in [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues).
