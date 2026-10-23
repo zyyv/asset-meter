@@ -20,8 +20,7 @@ export interface Metrics {
 export interface Settings {
   enabled: boolean
   displayMode: 'always' | 'hover'
-  fileExtensions: string[]
-  folderNames: string[]
+  include: string[]
   exclude: string[]
   showFileCount: boolean
   fileCountMode: 'recursive' | 'direct'

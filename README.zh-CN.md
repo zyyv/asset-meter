@@ -21,7 +21,7 @@
 - **资源体积一目了然**：在原有 Explorer 文件树中显示完整大小、文件夹总大小和文件数量。
 - **颜色提示大文件**：可配置黄色、橙色、红色阈值，只改变体积文字颜色，保留文件名主题和 Git 状态颜色。
 - **先对比，再保存**：支持图片并排对比、滑块对比，以及适应窗口和 100% 缩放。
-- **按项目定制**：自定义扩展名、文件夹名、排除规则、计量单位和精度；保存、创建、删除、重命名后自动刷新。
+- **按项目定制**：自定义 include / exclude glob 规则、计量单位和精度；保存、创建、删除、重命名后自动刷新。
 - **可选压缩插件**：默认使用本地 jSquash，也可配置 API Key 使用 TinyPNG 云端压缩；扩展不采集遥测。
 
 ```text
@@ -40,7 +40,7 @@
 2. 打开包含 `assets`、`public`、`static`、`images`、`img`、`media` 或 `fonts` 文件夹的工作区，悬停在匹配的文件或文件夹上查看体积。
 3. 需要完整行内标签时，在命令面板执行 **Assets Size: Install / Reapply Native Explorer Patch**，然后点击 **Reload Window**。
 
-运行 **Assets Size: Open Settings** 修改匹配规则。空文件夹显示 `0 files · 0 B`。将 `assetSize.folderNames` 设置为 `["*"]`，即可统计所有文件夹。
+运行 **Assets Size: Open Settings** 修改匹配规则。空文件夹显示 `0 files · 0 B`。将 `assetSize.include` 设置为 `["**/*"]`，即可显示所有文件和文件夹的装饰。
 
 ## 图片压缩
 
@@ -78,8 +78,7 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 ```json
 {
   "assetSize.displayMode": "always",
-  "assetSize.fileExtensions": [".jpg", ".jpeg", ".png", ".svg", ".webp", ".woff2"],
-  "assetSize.folderNames": ["assets", "public", "images", "fonts"],
+  "assetSize.include": ["**/*.{jpg,jpeg,png,svg,webp,woff2}", "**/{assets,public,images,fonts}"],
   "assetSize.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
   "assetSize.showFileCount": true,
   "assetSize.fileCountMode": "recursive",
@@ -89,15 +88,16 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 }
 ```
 
-自定义数组会**替换默认数组**。排除规则与 `.gitignore`、`files.exclude` 相互独立。
+自定义数组会**替换默认数组**。匹配使用 [picomatch](https://github.com/micromatch/picomatch)，相对于各工作区根目录，不区分大小写，包含点文件。路径匹配不读取文件系统。排除规则与 `.gitignore`、`files.exclude` 相互独立。
+
+`assetSize.include` 替换原来的 `assetSize.fileExtensions` 和 `assetSize.folderNames`。例如，扩展名 `[".png", ".tar.gz"]` 改为 `["**/*.{png,tar.gz}"]`，目录名 `["assets", "images"]` 改为 `["**/{assets,images}"]`。目录模式只选择目录本身；加上 `/**` 可同时选择其后代，例如 `assets/**` 选择 `assets` 及其全部内容。
 
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
 | `assetSize.enabled` | `true` | 启用体积计算和装饰。 |
 | `assetSize.displayMode` | `"always"` | 常驻显示右侧标签；`"hover"` 仅在鼠标移到该文件或目录行时显示右侧数量和大小。两种行内显示均需补丁；未安装时仍可查看悬停提示。 |
-| `assetSize.fileExtensions` | 常见资源格式 | 不区分大小写，可省略前导点，支持 `.tar.gz`；`"*"` 匹配所有文件，`[]` 关闭文件装饰。 |
-| `assetSize.folderNames` | 常见资源目录 | 按任意层级的文件夹名匹配，不区分大小写；`"*"` 匹配所有文件夹，`[]` 关闭文件夹装饰。 |
-| `assetSize.exclude` | 版本控制、依赖、`.DS_Store` | 工作区相对 glob，支持 `**`、`*` 和花括号；被排除的文件不计入总量。 |
+| `assetSize.include` | 常见资源格式和目录 | 选择文件和文件夹的工作区相对 glob，支持 `**`、`*`、花括号、extglob 和否定模式；`"**/*"` 匹配全部资源，`[]` 关闭装饰。不限制目录总量。 |
+| `assetSize.exclude` | 版本控制、依赖、`.DS_Store` | 工作区相对 glob；匹配资源及其后代不会显示装饰，也不计入总量。 |
 | `assetSize.showFileCount` | `true` | 在文件夹大小之前显示文件数量。 |
 | `assetSize.fileCountMode` | `"recursive"` | 统计所有后代文件；`"direct"` 只统计直接子文件。大小始终递归计算。 |
 | `assetSize.units` | `"decimal"` | 1000 进制 KB / MB / GB；`"binary"` 使用 1024 进制 KiB / MiB / GiB。 |
@@ -111,9 +111,9 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 | `assetSize.compression.quality` | `75` | jSquash JPEG/WebP 质量，范围为 1–100；jSquash PNG 无损，TinyPNG 忽略此设置。 |
 | `assetSize.compression.saveBehavior` | `"ask"` | `"ask"`、`"saveAs"` 或 `"overwrite"`；仅用户设置可授予记住的保存权限。 |
 
-默认文件扩展名：`.jpg`、`.jpeg`、`.png`、`.gif`、`.webp`、`.avif`、`.svg`、`.ico`、`.bmp`、`.heic`、`.mp4`、`.webm`、`.mov`、`.mp3`、`.wav`、`.ogg`、`.woff`、`.woff2`、`.ttf`、`.otf`、`.pdf`、`.zip`。
+默认文件模式：`**/*.{jpg,jpeg,png,gif,webp,avif,svg,ico,bmp,heic,mp4,webm,mov,mp3,wav,ogg,woff,woff2,ttf,otf,pdf,zip}`。
 
-默认文件夹名：`assets`、`public`、`static`、`images`、`img`、`media`、`fonts`。匹配某个文件夹不会自动装饰它的所有子文件夹。
+默认目录模式：`**/{assets,public,static,images,img,media,fonts}`。匹配某个文件夹不会自动装饰它的所有子文件夹。
 
 默认排除：`**/.git/**`、`**/node_modules/**`、`**/.svn/**`、`**/.hg/**`、`**/.DS_Store`。
 
@@ -159,7 +159,7 @@ out/vs/workbench/workbench.desktop.main.css
 
 ## 统计规则与兼容性
 
-文件夹总量包含**所有未被排除的后代文件**，不受显示装饰的扩展名限制。大小是已保存的文件字节数，不是磁盘分配空间。符号链接会被跳过；遇到无法读取的项目，部分总量会标记 `≥`，并在悬停提示中解释。
+文件夹总量包含**所有未被排除的后代文件**，不受选择装饰的 `include` 模式限制。大小是已保存的文件字节数，不是磁盘分配空间。符号链接会被跳过；遇到无法读取的项目，部分总量会标记 `≥`，并在悬停提示中解释。
 
 结果按需计算，不同请求共享文件信息与子树统计缓存，最多保留 10,000 个资源条目，最多并发 16 次文件系统操作。保存、新增、删除和重命名后，工作区监听器先更新受影响的分支及已缓存的祖先目录，再刷新 Explorer；未变化的子项统计会被复用，已淘汰的分支会在需要时重新计算。外部变更未被捕获时，可执行 **Assets Size: Refresh Sizes**。
 

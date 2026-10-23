@@ -31,8 +31,7 @@ export class SizeService implements vscode.Disposable {
       matcher = new ResourceMatcher({
         enabled: config.get('enabled', true),
         displayMode: config.get('displayMode', 'always'),
-        fileExtensions: config.get('fileExtensions', []),
-        folderNames: config.get('folderNames', []),
+        include: config.get('include', []),
         exclude: config.get('exclude', []),
         showFileCount: config.get('showFileCount', true),
         fileCountMode: config.get('fileCountMode', 'recursive'),
@@ -55,12 +54,10 @@ export class SizeService implements vscode.Disposable {
     return this.matcher(uri).isExcluded(relative)
   }
 
-  matches(uri: vscode.Uri, isDirectory: boolean): boolean {
-    return !this.isExcluded(uri) && this.matcher(uri).matches(posix.basename(uri.path), isDirectory)
-  }
-
-  mayMatch(uri: vscode.Uri): boolean {
-    return !this.isExcluded(uri) && this.matcher(uri).mayMatch(posix.basename(uri.path))
+  matches(uri: vscode.Uri): boolean {
+    if (this.isExcluded(uri)) { return false }
+    const root = vscode.workspace.getWorkspaceFolder(uri)!
+    return this.matcher(uri).matches(posix.relative(root.uri.path, uri.path))
   }
 
   async measure(uri: vscode.Uri): Promise<Metrics> { return this.scanner.measure(uri.toString()) }

@@ -159,54 +159,17 @@
           "scope": "resource",
           "description": "Choose when size information is shown."
         },
-        "assetSize.fileExtensions": {
+        "assetSize.include": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "scope": "resource",
           "default": [
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".gif",
-            ".webp",
-            ".avif",
-            ".svg",
-            ".ico",
-            ".bmp",
-            ".heic",
-            ".mp4",
-            ".webm",
-            ".mov",
-            ".mp3",
-            ".wav",
-            ".ogg",
-            ".woff",
-            ".woff2",
-            ".ttf",
-            ".otf",
-            ".pdf",
-            ".zip"
+            "**/*.{jpg,jpeg,png,gif,webp,avif,svg,ico,bmp,heic,mp4,webm,mov,mp3,wav,ogg,woff,woff2,ttf,otf,pdf,zip}",
+            "**/{assets,public,static,images,img,media,fonts}"
           ],
-          "description": "File extensions to decorate (case-insensitive). The leading dot is optional; compound extensions such as .tar.gz are supported. Use * for all files. Does not limit folder totals."
-        },
-        "assetSize.folderNames": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "scope": "resource",
-          "default": [
-            "assets",
-            "public",
-            "static",
-            "images",
-            "img",
-            "media",
-            "fonts"
-          ],
-          "description": "Folder names to decorate at any depth (case-insensitive). Use * for all folders."
+          "description": "Workspace-relative picomatch patterns selecting files and folders to decorate (case-insensitive, including dotfiles). Use **/* for all resources or [] for none. Directory patterns select the directory itself; add /** to select its descendants. Does not limit folder totals."
         },
         "assetSize.exclude": {
           "type": "array",
@@ -221,7 +184,7 @@
             "**/.hg/**",
             "**/.DS_Store"
           ],
-          "description": "Workspace-relative glob exclusions. Matching resources are excluded from decorations and totals. Supports **, * and braces."
+          "description": "Workspace-relative picomatch exclusions (case-insensitive, including dotfiles). Matching resources and their descendants are excluded from decorations and totals. Supports **, *, braces and extglobs."
         },
         "assetSize.showFileCount": {
           "type": "boolean",

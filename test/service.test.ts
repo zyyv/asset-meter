@@ -8,6 +8,7 @@ import { SizeService } from '../src/service'
 const state = vi.hoisted(() => ({
   entries: new Map<string, FileStat>(),
   config: {} as Record<string, unknown>,
+  workspaceRoot: 'file:///workspace',
   beforeStat: undefined as ((key: string) => Promise<void>) | undefined,
 }))
 
@@ -37,13 +38,15 @@ vi.mock('vscode', async () => {
     fire(value: T) { for (const listener of this.listeners) { listener(value) } }
     dispose() { this.listeners.clear() }
   }
-  const root = Uri.parse('file:///workspace')
   return {
     Uri,
     EventEmitter,
     FileType: { File: 1, Directory: 2, SymbolicLink: 64 },
     workspace: {
-      getWorkspaceFolder: (uri: Uri) => uri.toString() === root.toString() || uri.toString().startsWith(`${root}/`) ? { uri: root } : undefined,
+      getWorkspaceFolder: (uri: Uri) => {
+        const root = Uri.parse(state.workspaceRoot)
+        return uri.toString() === root.toString() || uri.toString().startsWith(`${root}/`) ? { uri: root } : undefined
+      },
       getConfiguration: () => ({ get: (key: string, fallback: unknown) => state.config[key] ?? fallback }),
       fs: {
         stat: vi.fn(async (uri: Uri) => {
@@ -67,10 +70,37 @@ const token = { isCancellationRequested: false } as vscode.CancellationToken
 beforeEach(() => {
   vi.clearAllMocks()
   state.beforeStat = undefined
-  state.config = { fileExtensions: ['.png'], folderNames: ['assets'], exclude: ['**/node_modules/**'] }
+  state.workspaceRoot = 'file:///workspace'
+  state.config = { include: ['**/*.png', '**/assets'], exclude: ['**/node_modules/**'] }
   state.entries.clear()
   state.entries.set(assets.toString(), { type: vscode.FileType.Directory, size: 0 })
   state.entries.set(logo.toString(), { type: vscode.FileType.File, size: 10 })
+})
+
+it('path matching is synchronous and performs no filesystem reads', () => {
+  const service = new SizeService()
+  try {
+    assert.equal(service.matches(logo), true)
+    assert.equal(service.matches(assets), true)
+    assert.equal(service.matches(vscode.Uri.joinPath(assets, 'node_modules', 'logo.png')), false)
+    assert.equal(vi.mocked(vscode.workspace.fs.stat).mock.calls.length, 0)
+    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.length, 0)
+  }
+  finally { service.dispose() }
+})
+
+it('directory globs decorate empty folders while symbolic links stay hidden', async () => {
+  state.config.include = ['assets/**']
+  state.entries.delete(logo.toString())
+  const link = vscode.Uri.joinPath(assets, 'loop')
+  state.entries.set(link.toString(), { type: vscode.FileType.Directory | vscode.FileType.SymbolicLink, size: 0 })
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    assert.match((await decorations.provideFileDecoration(assets, token))?.tooltip ?? '', /0 B/)
+    assert.equal(await decorations.provideFileDecoration(link, token), undefined)
+  }
+  finally { decorations.dispose(); service.dispose() }
 })
 
 it('switching display modes keeps inline metrics with a hover marker and refreshes Explorer', async () => {
@@ -127,7 +157,7 @@ it('refresh updates cached sizes before notifying Explorer about the resource an
     assert.deepEqual(affected, [logo.toString(), assets.toString(), 'file:///workspace'])
     assert.match((await decorations.provideFileDecoration(assets, token))?.tooltip ?? '', /20 B/)
     assert.equal(vi.mocked(vscode.workspace.fs.stat).mock.calls.length, 3)
-    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.length, 1)
+    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.length, 1, 'only the aggregate reads directory contents')
   }
   finally { decorations.dispose(); service.dispose() }
 })
@@ -143,6 +173,61 @@ it('deleted files are removed from cached ancestor sizes before decoration notif
     assert.equal((await service.measure(assets)).files, 0)
     assert.equal(await decorations.provideFileDecoration(logo, token), undefined)
     assert.match((await decorations.provideFileDecoration(assets, token))?.tooltip ?? '', /0 B/)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it('include globs use workspace paths and configuration changes rebuild decoration rules', async () => {
+  state.config.include = ['assets/*.png']
+  const other = vscode.Uri.parse('file:///workspace/other.png')
+  state.entries.set(other.toString(), { type: vscode.FileType.File, size: 5 })
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    assert.ok(await decorations.provideFileDecoration(logo, token))
+    assert.equal(await decorations.provideFileDecoration(other, token), undefined)
+    assert.equal(await decorations.provideFileDecoration(assets, token), undefined)
+    state.config.include = ['**/*']
+    service.invalidate(undefined, true)
+    assert.ok(await decorations.provideFileDecoration(other, token))
+    assert.ok(await decorations.provideFileDecoration(assets, token))
+    state.config.include = []
+    service.invalidate(undefined, true)
+    assert.equal(await decorations.provideFileDecoration(logo, token), undefined)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it('new files become selectable after refresh while totals count files outside include', async () => {
+  const notes = vscode.Uri.joinPath(assets, 'notes.txt')
+  const added = vscode.Uri.joinPath(assets, 'added.png')
+  state.entries.set(notes.toString(), { type: vscode.FileType.File, size: 5 })
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    assert.equal(await decorations.provideFileDecoration(added, token), undefined)
+    assert.equal((await service.measure(assets)).bytes, 15)
+    state.entries.set(added.toString(), { type: vscode.FileType.File, size: 20 })
+    await service.refresh([added])
+    assert.match((await decorations.provideFileDecoration(added, token))?.tooltip ?? '', /20 B/)
+    assert.equal(await decorations.provideFileDecoration(notes, token), undefined)
+    assert.equal((await service.measure(assets)).bytes, 35)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it('path matching supports virtual workspaces while metrics use the VS Code filesystem', async () => {
+  state.workspaceRoot = 'memfs://remote/project'
+  const remoteAssets = vscode.Uri.parse('memfs://remote/project/assets')
+  const remoteLogo = vscode.Uri.joinPath(remoteAssets, 'logo.png')
+  state.entries.set(remoteAssets.toString(), { type: vscode.FileType.Directory, size: 0 })
+  state.entries.set(remoteLogo.toString(), { type: vscode.FileType.File, size: 42 })
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    assert.match((await decorations.provideFileDecoration(remoteAssets, token))?.tooltip ?? '', /42 B/)
+    assert.match((await decorations.provideFileDecoration(remoteLogo, token))?.tooltip ?? '', /42 B/)
+    assert.equal(service.matches(logo), false, 'resources outside this workspace are ignored')
   }
   finally { decorations.dispose(); service.dispose() }
 })

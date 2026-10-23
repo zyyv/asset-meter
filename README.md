@@ -21,7 +21,7 @@ See file sizes and folder counts where you already work: VS Code's Explorer. Fin
 - **Sizes in Explorer.** Full file sizes and folder totals, with optional recursive or direct file counts.
 - **Useful color cues.** Configurable warning, large and critical thresholds on size text; filenames keep their theme and Git colors.
 - **Preview before saving.** Compare compressed images side by side or with a slider, at Fit or 100% zoom.
-- **Your rules.** Choose extensions, folder names, exclusions, units and decimal precision. Saved changes refresh sizes automatically.
+- **Your rules.** Choose include / exclude glob patterns, units and decimal precision. Saved changes refresh sizes automatically.
 - **Choose your compressor.** Local jSquash codecs by default, or optional TinyPNG cloud compression with your API key. No telemetry.
 
 ```text
@@ -40,7 +40,7 @@ See file sizes and folder counts where you already work: VS Code's Explorer. Fin
 2. Open a workspace containing an `assets`, `public`, `static`, `images`, `img`, `media` or `fonts` folder. Hover over matching files and folders to see their sizes.
 3. For full inline labels, run **Assets Size: Install / Reapply Native Explorer Patch** from the Command Palette, then choose **Reload Window**.
 
-Run **Assets Size: Open Settings** to customize matching rules. An empty folder displays `0 files · 0 B`. Set `assetSize.folderNames` to `["*"]` to include every folder.
+Run **Assets Size: Open Settings** to customize matching rules. An empty folder displays `0 files · 0 B`. Set `assetSize.include` to `["**/*"]` to decorate every file and folder.
 
 ## Compress images
 
@@ -78,8 +78,7 @@ Open **Settings → Extensions → Assets Size**, or add this example to `.vscod
 ```json
 {
   "assetSize.displayMode": "always",
-  "assetSize.fileExtensions": [".jpg", ".jpeg", ".png", ".svg", ".webp", ".woff2"],
-  "assetSize.folderNames": ["assets", "public", "images", "fonts"],
+  "assetSize.include": ["**/*.{jpg,jpeg,png,svg,webp,woff2}", "**/{assets,public,images,fonts}"],
   "assetSize.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
   "assetSize.showFileCount": true,
   "assetSize.fileCountMode": "recursive",
@@ -89,15 +88,16 @@ Open **Settings → Extensions → Assets Size**, or add this example to `.vscod
 }
 ```
 
-Configured arrays **replace** the defaults. Exclusions are independent of `.gitignore` and `files.exclude`.
+Configured arrays **replace** the defaults. Matching uses [picomatch](https://github.com/micromatch/picomatch), relative to each workspace folder, with case-insensitive matching and dotfiles enabled. Matching paths does not read the filesystem. Exclusions are independent of `.gitignore` and `files.exclude`.
+
+`assetSize.include` replaces the former `assetSize.fileExtensions` and `assetSize.folderNames` settings. Convert `[".png", ".tar.gz"]` to `["**/*.{png,tar.gz}"]` and `["assets", "images"]` to `["**/{assets,images}"]`. A directory pattern selects that directory itself; add `/**` to select its descendants as well. For example, `assets/**` selects `assets` and everything inside it.
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | `assetSize.enabled` | `true` | Enable size calculations and decorations. |
 | `assetSize.displayMode` | `"always"` | Keep labels visible; `"hover"` shows counts and sizes on the right only while hovering that Explorer row. Both require the patch; tooltips work without it. |
-| `assetSize.fileExtensions` | Common asset formats | Case-insensitive; leading dot optional. Supports `.tar.gz`; `"*"` matches all files; `[]` hides file decorations. |
-| `assetSize.folderNames` | Common asset folders | Case-insensitive names at any depth. `"*"` matches all folders; `[]` hides folder decorations. |
-| `assetSize.exclude` | VCS, dependencies, `.DS_Store` | Workspace-relative glob patterns; supports `**`, `*` and braces. Excluded files do not contribute to totals. |
+| `assetSize.include` | Common asset formats and folders | Workspace-relative glob patterns for files and folders; supports `**`, `*`, braces, extglobs and negated patterns. `"**/*"` matches all resources; `[]` hides decorations. Does not limit folder totals. |
+| `assetSize.exclude` | VCS, dependencies, `.DS_Store` | Workspace-relative glob patterns. Matching resources and their descendants are excluded from decorations and totals. |
 | `assetSize.showFileCount` | `true` | Show the file count before folder size. |
 | `assetSize.fileCountMode` | `"recursive"` | Count all descendants; `"direct"` counts immediate child files. Sizes always include descendants. |
 | `assetSize.units` | `"decimal"` | Base 1000: KB / MB / GB. `"binary"` uses KiB / MiB / GiB. |
@@ -111,9 +111,9 @@ Configured arrays **replace** the defaults. Exclusions are independent of `.giti
 | `assetSize.compression.quality` | `75` | jSquash JPEG/WebP quality from 1 to 100. jSquash PNG is lossless; TinyPNG ignores this setting. |
 | `assetSize.compression.saveBehavior` | `"ask"` | `"ask"`, `"saveAs"` or `"overwrite"`. Only User Settings can grant remembered save permission. |
 
-Default extensions: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.avif`, `.svg`, `.ico`, `.bmp`, `.heic`, `.mp4`, `.webm`, `.mov`, `.mp3`, `.wav`, `.ogg`, `.woff`, `.woff2`, `.ttf`, `.otf`, `.pdf`, `.zip`.
+Default file pattern: `**/*.{jpg,jpeg,png,gif,webp,avif,svg,ico,bmp,heic,mp4,webm,mov,mp3,wav,ogg,woff,woff2,ttf,otf,pdf,zip}`.
 
-Default folder names: `assets`, `public`, `static`, `images`, `img`, `media`, `fonts`. Matching a folder does not automatically decorate its subfolders.
+Default folder pattern: `**/{assets,public,static,images,img,media,fonts}`. Matching a folder does not automatically decorate its subfolders.
 
 Default exclusions: `**/.git/**`, `**/node_modules/**`, `**/.svn/**`, `**/.hg/**`, `**/.DS_Store`.
 
@@ -159,7 +159,7 @@ Unsupported editor code layouts are rejected before writing. The minimum API ver
 
 ## Totals and compatibility
 
-Folder totals include **all non-excluded descendant files**, regardless of which extensions receive decorations. Sizes reflect saved file bytes, not allocated disk blocks. Symbolic links are skipped. Unreadable items produce partial totals marked with `≥` and an explanation in the tooltip.
+Folder totals include **all non-excluded descendant files**, regardless of the `include` patterns selecting decorations. Sizes reflect saved file bytes, not allocated disk blocks. Symbolic links are skipped. Unreadable items produce partial totals marked with `≥` and an explanation in the tooltip.
 
 Results are calculated on demand, sharing cached file stats and subtree totals across requests, with up to 10,000 resource entries and 16 concurrent filesystem operations. After saves, additions, deletions and renames, workspace watchers update affected branches and cached ancestors before refreshing Explorer. Unchanged child contributions are reused; evicted branches are rebuilt when needed. Run **Assets Size: Refresh Sizes** if an external change is missed.
 
