@@ -1,9 +1,13 @@
-packages: []
+minimumReleaseAgeExcludePrune: true
+trustPolicy: no-downgrade
 enableGlobalVirtualStore: false
+shellEmulator: true
+packages: []
+
+overrides:
+  undici-types: 6.23.0
+
 allowBuilds:
   '@vscode/vsce-sign': true
   esbuild: true
   keytar: true
-overrides:
-  undici-types: 6.23.0
-trustPolicy: off

@@ -3,14 +3,14 @@
 完成下面的首次配置并提交代码后，每次发布只需一个命令：
 
 ```sh
-pnpm run publish
+pnpm release
 ```
 
-在 bumpp 中选择 `patch`、`minor`、`major` 或明确的 `x.y.z` 版本并确认，即可自动更新版本、提交并推送 `v<version>` tag。GitHub Actions 执行发布资料检查、lint、类型检查、构建打包和单元测试，通过后发布到 Visual Studio Marketplace，并创建附带 VSIX 的 GitHub Release。
+在 bumpp 中选择 `patch`、`minor`、`major` 或明确的 `x.y.z` 版本并确认，即可自动更新版本、提交并推送 `v<version>` tag。GitHub Actions 执行发布资料检查、lint、类型检查、构建打包和单元测试，通过后将同一份 VSIX 发布到 Visual Studio Marketplace 和 Open VSX，并创建附带 VSIX 的 GitHub Release。
 
 命令要求 Git 工作区干净，请先提交功能改动。若 CHANGELOG 有 `## Unreleased`，会将该节转为新版本；否则从最近一个可达的 `v*` tag 之后的 Git 提交生成记录，首次无 tag 时使用已有提交。已写好的目标版本记录会直接保留。Marketplace 不接受带 `-beta` 等后缀的版本。
 
-使用 `pnpm run publish` 调用项目脚本；`pnpm publish` 是 pnpm 内置的 npm 发布命令。
+`pnpm release` 负责升版本并推送 tag，`pnpm run publish` 负责把已经生成的 VSIX 上传到两个商店，后者由工作流注入密钥后执行。使用 `pnpm run publish` 调用项目脚本；`pnpm publish` 是 pnpm 内置的 npm 发布命令。
 
 ## 1. 创建发布者并确定扩展身份
 
@@ -88,15 +88,30 @@ VSCODE_EXECUTABLE_PATH="/path/to/disposable/Code" pnpm test:compression:ui
 
 按 [VS Code 官方 PAT 配置说明](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#get-a-personal-access-token)创建具有 **Marketplace → Manage** 权限的 Azure DevOps PAT。使用的账号必须有 `zyyv` Publisher 的发布权限。
 
-在仓库 **Settings → Secrets and variables → Actions → New repository secret** 添加 `VSCE_PAT`，值填入该 PAT。不要将 token 写入源码或提交到 Git。GitHub Release 使用工作流自动提供的 `GITHUB_TOKEN`，无需额外配置 GitHub token。
+在 Open VSX 按[官方发布说明](https://github.com/eclipse-openvsx/openvsx/wiki/Publishing-Extensions)登录账号、关联 Eclipse 账号并接受 Publisher Agreement，然后在 **Settings → Access Tokens** 生成 token。首次发布前，还需要创建与 `package.json` 的 `publisher` 一致的 `zyyv` namespace，并确保 token 所属账号有发布权限。创建 namespace 时，可在本地通过环境变量提供 token：
 
-提交发布配置和功能改动后，在 `main` 分支运行 `pnpm run publish`，选择版本并确认即可。在仓库 **Actions → Release** 查看进度。如果 Marketplace 已发布而 GitHub Release 步骤失败，可重新运行失败的工作流；`--skip-duplicate` 会跳过已存在的商店版本，并补传 GitHub Release 附件。
+```sh
+OVSX_PAT="$OVSX_TOKEN" pnpm exec ovsx create-namespace zyyv
+```
+
+在仓库 **Settings → Secrets and variables → Actions → New repository secret** 添加两个密钥：
+
+| Repository secret | 值 |
+| --- | --- |
+| `VSCE_TOKEN` | 具有 Marketplace → Manage 权限的 Azure DevOps PAT |
+| `OVSX_TOKEN` | 有权发布到 `zyyv` namespace 的 Open VSX access token |
+
+`.github/workflows/release.yml` 从 `${{ secrets.VSCE_TOKEN }}` 和 `${{ secrets.OVSX_TOKEN }}` 读取值并传给 `pnpm run publish`。脚本会先检查两个 token、VSIX 文件及发布工具，再分别映射到 CLI 需要的 `VSCE_PAT`、`OVSX_PAT` 环境变量；密钥不放进命令参数。不要将 token 写入源码或提交到 Git。GitHub Release 使用工作流自动提供的 `GITHUB_TOKEN`，无需额外配置 GitHub token。
+
+提交发布配置和功能改动后，在 `main` 分支运行 `pnpm release`，选择版本并确认即可。在仓库 **Actions → Release** 查看进度。如果只有一个商店发布成功，或 GitHub Release 步骤失败，可重新运行失败的工作流；两个 CLI 的 `--skip-duplicate` 会跳过已存在的商店版本，并继续完成发布及 GitHub Release 附件上传。
+
+如需在本地直接发布当前版本，先设置 `VSCE_TOKEN`、`OVSX_TOKEN` 环境变量，然后执行 `pnpm release:prepare` 和 `pnpm run publish`。本地脚本无法读取 GitHub repository secrets；只有工作流运行时才能注入它们。
 
 当前工作流使用 PAT。官方说明全局 Azure DevOps PAT 将于 **2026-12-01** 退役；届时需按[官方自动发布说明](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace)迁移到 Microsoft Entra ID，并调整发布步骤的认证方式。
 
 ## 5. 发布后核对
 
-搜索 **Assets Size**，在干净配置中从 Marketplace 安装，确认版本与 GitHub Release 附带的 VSIX 一致。将实际 Marketplace 链接加入 README。商店 ID 必须使用已经创建的 Publisher ID，当前不预填无法验证的安装链接。
+在 Visual Studio Marketplace 和 Open VSX 搜索 **Assets Size**，在干净配置中安装，确认两个商店的版本与 GitHub Release 附带的 VSIX 一致。将实际商店链接加入 README。商店 ID 必须使用已经创建的 Publisher ID，当前不预填无法验证的安装链接。
 
 ## Native patch recovery
 

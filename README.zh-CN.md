@@ -202,4 +202,4 @@ VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 
 不指定可执行路径时，集成测试下载 VS Code 1.90.2。UI 检查使用临时配置和工作区；补丁检查必须使用可丢弃的应用副本。
 
-按[发布指南](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md)完成一次性的 `VSCE_PAT` 配置后，提交代码并运行 `pnpm run publish`。在 bumpp 中选择版本，它会更新 CHANGELOG、提交并推送 `v*` tag。GitHub Actions 随后执行检查、构建并发布到 Marketplace，再创建附带 VSIX 的 GitHub Release。欢迎通过 [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues)提交可复现的问题和改进建议。
+按[发布指南](https://github.com/zyyv/vscode-assets-size/blob/main/docs/PUBLISHING.md)配置发布者以及仓库密钥 `VSCE_TOKEN` 和 `OVSX_TOKEN` 后，提交代码并运行 `pnpm release`。在 bumpp 中选择版本，它会更新 CHANGELOG、提交并推送 `v*` tag。GitHub Actions 随后执行检查和构建，通过 `pnpm run publish` 将同一份 VSIX 发布到 Visual Studio Marketplace 和 Open VSX，再创建附带 VSIX 的 GitHub Release。欢迎通过 [GitHub Issues](https://github.com/zyyv/vscode-assets-size/issues)提交可复现的问题和改进建议。

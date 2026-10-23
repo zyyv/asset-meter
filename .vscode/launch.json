@@ -1,8 +1,11 @@
 {
   "version": "0.2.0",
   "configurations": [{
-    "name": "Run Assets Size Extension", "type": "extensionHost", "request": "launch",
+    "name": "Run Assets Size Extension",
+    "type": "extensionHost",
+    "request": "launch",
     "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/examples/demo"],
-    "outFiles": ["${workspaceFolder}/dist/**/*.js"], "preLaunchTask": "npm: build"
+    "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+    "preLaunchTask": "npm: build"
   }]
 }

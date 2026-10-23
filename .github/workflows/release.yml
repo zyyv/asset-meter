@@ -46,16 +46,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish to Visual Studio Marketplace
+      - name: Publish to Visual Studio Marketplace and Open VSX
         env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if [ -z "$VSCE_PAT" ]; then
-            echo '::error::Add the VSCE_PAT repository secret with Marketplace publishing permission. See docs/PUBLISHING.md.'
-            exit 1
-          fi
-          pnpm exec vsce publish --packagePath "artifacts/assets-size-${VERSION}.vsix" --skip-duplicate
+          VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+        run: pnpm run publish
 
       - name: Create GitHub Release and upload VSIX
         env:

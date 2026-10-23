@@ -6,19 +6,18 @@
   "packageManager": "pnpm@12.14.0",
   "description": "See asset sizes and folder counts in Explorer. Compress JPEG, PNG and WebP with jSquash or TinyPNG, and compare before saving.",
   "license": "MIT",
-  "icon": "images/icon.png",
   "galleryBanner": {
     "color": "#171C20",
     "theme": "dark"
   },
   "homepage": "https://github.com/zyyv/vscode-assets-size#readme",
-  "bugs": {
-    "url": "https://github.com/zyyv/vscode-assets-size/issues"
-  },
   "qna": "https://github.com/zyyv/vscode-assets-size/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zyyv/vscode-assets-size.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zyyv/vscode-assets-size/issues"
   },
   "keywords": [
     "size",
@@ -36,6 +35,7 @@
     "Other"
   ],
   "main": "./dist/extension.js",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -314,14 +314,15 @@
     "watch": "node scripts/prepare-build.mjs && tsdown --watch",
     "typecheck": "tsc --noEmit",
     "check": "pnpm typecheck",
-    "lint": "eslint src test scripts bump.config.mjs eslint.config.mjs tsdown.config.mjs vitest.config.mjs",
-    "lint:fix": "pnpm lint --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test": "pnpm build && pnpm test:unit",
     "test:integration": "pnpm build && node scripts/run-integration.mjs",
     "test:ui": "node scripts/check-native-view.mjs",
     "vscode:prepublish": "pnpm typecheck && pnpm build",
     "package": "node scripts/package.mjs",
-    "publish": "bumpp",
+    "publish": "node scripts/publish.mjs",
+    "release": "bumpp",
     "test:unit": "vitest run",
     "test:watch": "pnpm build && vitest",
     "release:check": "node scripts/check-release.mjs",
@@ -344,6 +345,7 @@
     "bumpp": "^12.3.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
+    "ovsx": "^1.3.0",
     "playwright": "^1.64.1",
     "tsdown": "^0.23.1",
     "typescript": "^6.0.3",
