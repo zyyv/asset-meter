@@ -73,6 +73,43 @@ beforeEach(() => {
   state.entries.set(logo.toString(), { type: vscode.FileType.File, size: 10 })
 })
 
+it('switching display modes keeps inline metrics with a hover marker and refreshes Explorer', async () => {
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service, true)
+  const notify = vi.fn()
+  decorations.onDidChangeFileDecorations(notify)
+  try {
+    assert.equal((await decorations.provideFileDecoration(assets, token))?.badge, '\u2063\u20601 file · 10 B\u2063')
+    state.config.displayMode = 'hover'
+    service.invalidate(undefined, true)
+    assert.equal(notify.mock.calls.length, 1)
+    const folder = await decorations.provideFileDecoration(assets, token)
+    assert.equal(folder?.badge, '\u2063\u2060\u20621 file · 10 B\u2063')
+    assert.match(folder?.tooltip ?? '', /Files: 1/)
+    const file = await decorations.provideFileDecoration(logo, token)
+    assert.equal(file?.badge, '\u2063\u2060\u206210 B\u2063')
+    assert.equal(file?.color, undefined)
+    assert.match(file?.tooltip ?? '', /Size: 10 B/)
+    state.config.displayMode = 'always'
+    service.invalidate(undefined, true)
+    assert.equal((await decorations.provideFileDecoration(assets, token))?.badge, '\u2063\u20601 file · 10 B\u2063')
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it.each(['always', 'hover'])('unpatched hosts keep tooltip details without long badges in %s mode', async (mode) => {
+  state.config.displayMode = mode
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    const folder = await decorations.provideFileDecoration(assets, token)
+    assert.equal(folder?.badge, undefined)
+    assert.match(folder?.tooltip ?? '', /Files: 1/)
+    assert.match(folder?.tooltip ?? '', /Size: 10 B/)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
 it('refresh updates cached sizes before notifying Explorer about the resource and every ancestor', async () => {
   const service = new SizeService()
   const decorations = new SizeDecorationProvider(service, true)

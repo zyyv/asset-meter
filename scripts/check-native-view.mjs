@@ -104,11 +104,40 @@ try {
   await page.locator('.part.sidebar').screenshot({ path: path.join(root, 'artifacts/native-explorer-preview.png') })
 
   await writeFile(settingsFile, JSON.stringify({ ...settings, 'assetSize.displayMode': 'hover' }))
+  await page.mouse.move(0, 0)
   await waitFor(() => hero.evaluate(element => !getComputedStyle(element, '::after').content.includes('6.3 MB')))
-  await hero.hover()
-  await page.locator('.monaco-hover').filter({ hasText: '6.3 MB' }).first().waitFor({ state: 'visible', timeout: 10_000 })
+  assert.equal(await asset.evaluate(element => getComputedStyle(element.querySelector('.monaco-icon-label-container'), '::after').content.includes('3 files')), false)
+  await assetRow.locator('.monaco-tl-twistie').hover()
+  await waitFor(() => asset.evaluate(element => getComputedStyle(element, '::after').content.includes('7.9 MB')))
+  assert.match(await asset.evaluate(element => getComputedStyle(element.querySelector('.monaco-icon-label-container'), '::after').content), /3 files ·/)
+  assert.equal(await images.evaluate(element => getComputedStyle(element, '::after').content.includes('7.9 MB')), false, 'Other rows stay hidden')
+  assert.equal(await hero.evaluate(element => getComputedStyle(element, '::after').content.includes('6.3 MB')), false)
+  const alignment = await asset.evaluate((element) => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--vscode-descriptionForeground)'
+    element.append(probe)
+    const expected = getComputedStyle(probe).color
+    probe.remove()
+    const container = element.querySelector('.monaco-icon-label-container')
+    const name = element.querySelector('.label-name')
+    return { countColor: getComputedStyle(container, '::after').color, nameColor: getComputedStyle(name).color, expected, trailing: container.getBoundingClientRect().right > name.getBoundingClientRect().right }
+  })
+  assert.ok([alignment.expected, alignment.nameColor].includes(alignment.countColor), 'Hovered folder count keeps the neutral or selection color')
+  assert.equal(alignment.trailing, true, 'Hovered folder metrics appear to the right of its name')
+  await page.locator('.part.sidebar').screenshot({ path: path.join(root, 'artifacts/native-explorer-hover-preview.png') })
+  await hero.locator('.label-name').hover()
+  await waitFor(() => hero.evaluate(element => getComputedStyle(element, '::after').content.includes('6.3 MB')))
+  assert.equal(await asset.evaluate(element => getComputedStyle(element, '::after').content.includes('7.9 MB')), false, 'Previous row hides on mouse leave')
+  assert.equal(await hero.evaluate(element => getComputedStyle(element, '::after').color), colors.expected)
+  // Tooltip content is checked in the extension-host integration suite.
+  // Hover mode reveals the inline label without waiting for a tooltip popup.
+  await page.mouse.move(0, 0)
+  await waitFor(() => hero.evaluate(element => !getComputedStyle(element, '::after').content.includes('6.3 MB')))
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(() => asset.evaluate(element => getComputedStyle(element.querySelector('.monaco-icon-label-container'), '::after').content.includes('3 files')))
+  await waitFor(() => hero.evaluate(element => getComputedStyle(element, '::after').content.includes('6.3 MB')))
   assert.doesNotMatch(log, /The 'badge'-property must be undefined|Error from file decoration provider/)
-  console.log('Native Explorer UI passed: full size, file count, red severity, expansion, hover mode, no extra panel.')
+  console.log('Native Explorer UI passed: full size, file count, red severity, expansion, labels on row hover, mouse leave, live mode switching, no extra panel.')
 }
 finally {
   if (browser) { await browser.close() }

@@ -1,6 +1,6 @@
 import type { SizeService } from './service'
 import * as vscode from 'vscode'
-import { describeMetrics, inlineLabel, nativeLabelMarker, nativeToneMarker } from './core/format'
+import { describeMetrics, inlineLabel, nativeHoverMarker, nativeLabelMarker, nativeToneMarker } from './core/format'
 import { sizeSeverity } from './core/severity'
 
 export class SizeDecorationProvider implements vscode.FileDecorationProvider, vscode.Disposable {
@@ -43,8 +43,9 @@ export class SizeDecorationProvider implements vscode.FileDecorationProvider, vs
       // Keep severity metadata invisible even if an older renderer shows the
       // complete badge instead of decoding it. Never prefix counts with digits.
       const tone = nativeToneMarker.repeat({ normal: 1, warning: 2, large: 3, critical: 4 }[severity])
-      const badge = this.nativePatchActive && settings.displayMode === 'always'
-        ? `${nativeLabelMarker}${tone}${inlineLabel(metrics, settings)}${nativeLabelMarker}`
+      const mode = settings.displayMode === 'hover' ? nativeHoverMarker : ''
+      const badge = this.nativePatchActive
+        ? `${nativeLabelMarker}${tone}${mode}${inlineLabel(metrics, settings)}${nativeLabelMarker}`
         : undefined
       const tooltip = `Assets Size\n${describeMetrics(metrics, settings)}`
       // FileDecoration.color also colors filenames. The native renderer reads

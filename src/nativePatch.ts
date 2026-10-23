@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 
-const patchRevision = 3
+const patchRevision = 4
 const marker = `ASSET_SIZE_NATIVE_PATCH_V${patchRevision}`
 const hasPatch = (source: string) => /ASSET_SIZE_NATIVE_PATCH_V\d+/.test(source)
 const backupName = '.asset-size-native-patch'
@@ -19,7 +19,7 @@ export interface PatchResult { changed: boolean, backupDirectory: string }
 
 // Accept the previous numeric header while older extension hosts finish
 // reloading, but only emit invisible headers in the current extension.
-const nativeBadgePattern = String.raw`/^\u2063(\u2060{1,4}|[0-3])((?:\d+ files? \u00b7 )?(?:\u2265 )?\d+(?:\.\d+)? (?:B|[KMGTPE]i?B))\u2063$/u`
+const nativeBadgePattern = String.raw`/^\u2063(\u2060{1,4}|[0-3])(\u2062)?((?:\d+ files? \u00b7 )?(?:\u2265 )?\d+(?:\.\d+)? (?:B|[KMGTPE]i?B))\u2063$/u`
 const badgeStyle = ' white-space: nowrap; width: auto; min-width: 0; max-width: none; flex: 0 0 auto; margin-left: 12px; margin-right: 12px; font-family: var(--vscode-font-family); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; opacity: 1;'
 const countStyle = ' margin-left: auto; padding-left: 12px; flex: 0 0 auto; white-space: nowrap; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground);'
 const css = `\n/* ${marker} */
@@ -28,7 +28,7 @@ const css = `\n/* ${marker} */
 .explorer-folders-view .explorer-item > .monaco-icon-label-container > .monaco-icon-name-container { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 `
 const rendererHelper = `
-function __assetSizeNativeBadgeV3(value) {
+function __assetSizeNativeBadgeV4(value) {
   const fragments = value.split(", ");
   const pattern = ${nativeBadgePattern};
   const own = fragments.find(part => pattern.test(part));
@@ -37,9 +37,10 @@ function __assetSizeNativeBadgeV3(value) {
   if (!parsed) return null;
   const header = parsed[1];
   const tone = header.charCodeAt(0) === 0x2060 ? header.length - 1 : Number(header);
-  const text = parsed[2];
+  const text = parsed[3];
   const separator = text.lastIndexOf(" · ");
   return {
+    hover: !!parsed[2],
     size: separator < 0 ? text : text.slice(separator + 3),
     count: separator < 0 ? "" : text.slice(0, separator) + " ·",
     color: ["var(--vscode-descriptionForeground)", "var(--vscode-assetSize-sizeWarning)", "var(--vscode-assetSize-sizeLarge)", "var(--vscode-assetSize-sizeCritical)"][tone],
@@ -77,11 +78,14 @@ export function patchWorkbench(source: string): string {
     const outside = `${emit}(${selector},${fallback},${sheet})`
     // Two distinct pseudo-elements keep counts neutral and severity colors on
     // the trailing size alone. No filename or Git decoration colors are changed.
-    const sizeSelector = '`' + '.monaco-workbench .explorer-folders-view .monaco-list-row .monaco-icon-label.${this.itemBadgeClassName}::after`'
+    // Match the full tree row so hovering the twistie or right padding also
+    // reveals the label, without leaving space for counts on other rows.
+    const rowSelector = '.explorer-folders-view .monaco-list-row${__assetSizeData.hover ? ":hover" : ""}'
+    const sizeSelector = '`' + `.monaco-workbench ${rowSelector} .monaco-icon-label.` + '${this.itemBadgeClassName}::after`'
     const sizeContent = `\`content: "\${__assetSizeData.size}"; color: \${__assetSizeData.color} !important;${badgeStyle}\``
-    const countSelector = '`' + '.explorer-folders-view .${this.itemBadgeClassName} > .monaco-icon-label-container::after`'
+    const countSelector = '`' + `${rowSelector} .` + '${this.itemBadgeClassName} > .monaco-icon-label-container::after`'
     const countContent = `\`content: "\${__assetSizeData.count}";${countStyle}\``
-    return `(()=>{const __assetSizeData=__assetSizeNativeBadgeV3(${value});if(!__assetSizeData){${ordinary};return;}${outside};${emit}(${sizeSelector},${sizeContent},${sheet});if(__assetSizeData.count){${emit}(${countSelector},${countContent},${sheet});}})()`
+    return `(()=>{const __assetSizeData=__assetSizeNativeBadgeV4(${value});if(!__assetSizeData){${ordinary};return;}${outside};${emit}(${sizeSelector},${sizeContent},${sheet});if(__assetSizeData.count){${emit}(${countSelector},${countContent},${sheet});}})()`
   })
   if (matches !== 2) { throw new Error(`Unsupported decoration renderer layout (${matches} matches). No program files were modified.`) }
   return `${result}\n/* ${marker} */\n${rendererHelper}`

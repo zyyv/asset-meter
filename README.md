@@ -86,7 +86,7 @@ Configured arrays **replace** the defaults. Exclusions are independent of `.giti
 | Setting | Default | Description |
 | --- | --- | --- |
 | `assetSize.enabled` | `true` | Enable size calculations and decorations. |
-| `assetSize.displayMode` | `"always"` | Inline labels with the patch; `"hover"` shows tooltip details only. |
+| `assetSize.displayMode` | `"always"` | Keep labels visible; `"hover"` shows counts and sizes on the right only while hovering that Explorer row. Both require the patch; tooltips work without it. |
 | `assetSize.fileExtensions` | Common asset formats | Case-insensitive; leading dot optional. Supports `.tar.gz`; `"*"` matches all files; `[]` hides file decorations. |
 | `assetSize.folderNames` | Common asset folders | Case-insensitive names at any depth. `"*"` matches all folders; `[]` hides folder decorations. |
 | `assetSize.exclude` | VCS, dependencies, `.DS_Store` | Workspace-relative glob patterns; supports `**`, `*` and braces. Excluded files do not contribute to totals. |
@@ -125,7 +125,7 @@ Customize `assetSize.sizeWarning`, `assetSize.sizeLarge` and `assetSize.sizeCrit
 | Command Palette entry | Action |
 | --- | --- |
 | **Assets Size: Refresh Sizes** | Recalculate sizes and folder totals. |
-| **Assets Size: Toggle Always / Hover** | Switch between inline labels and tooltips. |
+| **Assets Size: Toggle Always / Hover** | Toggle always-visible labels and labels shown on row hover. |
 | **Assets Size: Open Settings** | Open this extension's settings. |
 | **Assets Size: Compress Image** | Compress an image and open its comparison. |
 | **Assets Size: Install / Reapply Native Explorer Patch** | Install, upgrade or reapply the optional patch. |
@@ -141,7 +141,7 @@ out/vs/workbench/workbench.desktop.main.js
 out/vs/workbench/workbench.desktop.main.css
 ```
 
-Run **Assets Size: Install / Reapply Native Explorer Patch**, then reload. This requires write permission to the application directory. Integrity checks and code signatures are not disabled; VS Code may report that the installation appears corrupt. Hover mode and compression remain available without the patch.
+Run **Assets Size: Install / Reapply Native Explorer Patch**, then reload. This requires write permission to the application directory. Integrity checks and code signatures are not disabled; VS Code may report that the installation appears corrupt. Tooltips and compression remain available without the patch. Reapply an older patch to enable inline labels on row hover.
 
 Unsupported editor code layouts are rejected before writing. The minimum API version does not guarantee patch compatibility with every VS Code release or derivative. Reapply after editor updates. Upgrades from 0.2.0 / 0.2.1 reuse verified original backups without restoring first.
 
@@ -155,7 +155,7 @@ Results are calculated on demand, sharing cached file stats and subtree totals a
 
 | Situation | What to check |
 | --- | --- |
-| Only tooltips appear | Reapply the patch, reload, select `"always"` and enable `explorer.decorations.badges`. |
+| Only tooltips appear | Reapply the patch, reload and enable `explorer.decorations.badges`. In `"hover"` mode, move the pointer over the Explorer row to reveal its label. |
 | No size for an item | Check matching rules, exclusions, `assetSize.enabled` and symbolic links. |
 | Remote SSH, WSL or Dev Containers | Calculations use the workspace extension host. Inline labels require access to local desktop program files; do not assume patch support in remote sessions. |
 | Virtual workspace | Totals depend on the filesystem provider's stat, enumeration and watch support. |

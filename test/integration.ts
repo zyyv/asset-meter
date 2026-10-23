@@ -59,8 +59,9 @@ export async function run(): Promise<void> {
     await config.update('displayMode', 'hover', vscode.ConfigurationTarget.Workspace)
     service.invalidate(undefined, true)
     const hover = await decorations.provideFileDecoration(logo, cancellation.token)
-    assert.equal(hover?.badge, undefined)
+    assert.equal(hover?.badge, patched ? '\u2063\u2060\u20621.5 KB\u2063' : undefined)
     assert.match(hover?.tooltip ?? '', /1.5 KB/)
+    assert.equal((await decorations.provideFileDecoration(assets, cancellation.token))?.badge, patched ? '\u2063\u2060\u20623 files · 2.3 KB\u2063' : undefined)
 
     await config.update('fileColorThresholdsMiB', [0.00025, 0.001, 0.005], vscode.ConfigurationTarget.Workspace)
     service.invalidate(undefined, true)

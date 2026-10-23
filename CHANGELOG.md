@@ -2,6 +2,7 @@
 
 ## 0.3.0
 
+- Show right-aligned counts and sizes on the hovered Explorer row in hover mode; hide them again on mouse leave.
 - Introduce the Assets Size name, a new extension icon, and English / Simplified Chinese documentation.
 - Add Marketplace metadata, version-aware VSIX packaging, and a release checklist.
 - Open extension settings using the installed extension ID so publisher changes work correctly.

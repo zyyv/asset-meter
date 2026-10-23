@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
@@ -17,9 +18,13 @@ it('patched host accepts only safe full Asset Size labels and preserves other ba
   assert.equal(context.validate({ badge: '\u2063324 files · 1.2 MB\u2063' }), true)
   assert.equal(context.validate({ badge: '\u206302 files · ≥ 1.5 KiB\u2063' }), true)
   assert.equal(context.validate({ badge: '\u2063\u20600 files · 0 B\u2063' }), true)
+  assert.equal(context.validate({ badge: '\u2063\u2060\u20620 files · 0 B\u2063' }), true)
+  assert.equal(context.validate({ badge: '\u2063\u2060\u2060\u2060\u2060\u20621.2 MB\u2063' }), true)
   assert.equal(context.validate({ badge: 'M' }), true)
   assert.throws(() => context.validate!({ badge: 'unrelated-long-badge' }))
   assert.throws(() => context.validate!({ badge: '\u2063"; background: red;\u2063' }))
+  assert.throws(() => context.validate!({ badge: '\u2063\u2060\u2062\u20621.2 MB\u2063' }))
+  assert.throws(() => context.validate!({ badge: '\u2063\u2060\u2062"; background: red;\u2063' }))
 })
 
 it('renderer scopes sizes to Explorer, keeps counts neutral, and preserves ordinary badges', () => {
@@ -42,12 +47,34 @@ it('renderer scopes sizes to Explorer, keeps counts neutral, and preserves ordin
   assert.match(emitted[2]![1], /content: "1.2 MB"/)
   assert.match(emitted[2]![1], /var\(--vscode-assetSize-sizeCritical\)/)
   assert.match(emitted[3]![1], /content: "M"/)
-  assert.equal(emitted[5]![0], '.explorer-folders-view .example > .monaco-icon-label-container::after')
+  assert.equal(emitted[5]![0], '.explorer-folders-view .monaco-list-row .example > .monaco-icon-label-container::after')
   assert.match(emitted[5]![1], /content: "24 files ·"/)
   assert.match(emitted[5]![1], /var\(--vscode-descriptionForeground\)/)
   assert.match(emitted[7]![1], /content: "0 B"/)
   assert.match(emitted[8]![1], /content: "0 files ·"/)
   assert.doesNotMatch(emitted[8]![1], /00 files/)
+})
+
+it('hover labels reveal counts and sizes only on the hovered Explorer row and preserve other badges', () => {
+  const emitted: [string, string][] = []
+  const context: Record<string, unknown> = { emit: (selector: string, content: string) => emitted.push([selector, content]), color: () => 'red' }
+  runInNewContext(patchWorkbench(renderer), context)
+  const one = context.one as (letter: string, color: string) => void
+  const many = context.many as (letters: string[], color: string) => void
+  const receiver = { itemBadgeClassName: 'example' }
+  many.call(receiver, ['M', '\u2063\u2060\u2060\u2060\u2060\u206224 files · 1.2 MB\u2063'], 'red')
+  one.call(receiver, '\u2063\u2060\u20620 B\u2063', 'red')
+  assert.deepEqual(emitted[0], ['.example::after', 'content: "M"; color: red;'])
+  assert.equal(emitted[1]![0], '.monaco-workbench .explorer-folders-view .monaco-list-row:hover .monaco-icon-label.example::after')
+  assert.match(emitted[1]![1], /content: "1.2 MB"/)
+  assert.match(emitted[1]![1], /var\(--vscode-assetSize-sizeCritical\)/)
+  assert.equal(emitted[2]![0], '.explorer-folders-view .monaco-list-row:hover .example > .monaco-icon-label-container::after')
+  assert.match(emitted[2]![1], /content: "24 files ·"/)
+  assert.match(emitted[2]![1], /var\(--vscode-descriptionForeground\)/)
+  assert.deepEqual(emitted[3], ['.example::after', 'content: ""; color: red;'])
+  assert.match(emitted[4]![0], /\.monaco-list-row:hover /)
+  assert.match(emitted[4]![1], /content: "0 B"/)
+  assert.equal(emitted.length, 5, 'Files do not emit a count label')
 })
 
 async function fixture(): Promise<string> {
@@ -84,6 +111,31 @@ it('unsupported editor layouts are rejected before any program file is modified'
     await assert.rejects(installNativePatch(root), /Unsupported decoration renderer layout/)
     assert.equal(await readFile(path.join(root, targetPaths[0]!), 'utf8'), host)
     assert.ok(!(await readdir(root)).includes('.asset-size-native-patch'))
+  }
+  finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it('upgrading a previous patch adds row hover support and retains the original backups', async () => {
+  const root = await fixture()
+  try {
+    const originals = await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8')))
+    await installNativePatch(root)
+    const manifestPath = path.join(root, '.asset-size-native-patch', 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { revision: number, files: { patchedHash: string }[] }
+    manifest.revision = 3
+    for (const [index, file] of targetPaths.entries()) {
+      const older = (await readFile(path.join(root, file), 'utf8')).replaceAll('ASSET_SIZE_NATIVE_PATCH_V4', 'ASSET_SIZE_NATIVE_PATCH_V3')
+      await writeFile(path.join(root, file), older)
+      manifest.files[index]!.patchedHash = createHash('sha256').update(older).digest('hex')
+    }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    assert.equal((await getNativePatchStatus(root)).needsUpgrade, true)
+    assert.equal((await installNativePatch(root)).changed, true)
+    assert.equal((await getNativePatchStatus(root)).installed, true)
+    assert.match(await readFile(path.join(root, targetPaths[1]!), 'utf8'), /:hover/)
+    assert.ok(!(await readdir(root)).some(file => file.startsWith('.asset-size-native-patch.')))
+    await restoreNativePatch(root)
+    assert.deepEqual(await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8'))), originals)
   }
   finally { await rm(root, { recursive: true, force: true }) }
 })

@@ -12,6 +12,7 @@ export function formatSize(bytes: number, units: Settings['units'] = 'binary', p
 // Unpatched hosts never receive these long badges.
 export const nativeLabelMarker = '\u2063'
 export const nativeToneMarker = '\u2060'
+export const nativeHoverMarker = '\u2062'
 
 export function inlineLabel(metrics: Metrics, settings: Settings): string {
   const size = `${metrics.errors ? '≥ ' : ''}${formatSize(metrics.bytes, settings.units, settings.decimalPlaces)}`

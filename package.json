@@ -153,7 +153,7 @@
           ],
           "enumDescriptions": [
             "Show file counts followed by full sizes in Explorer. Requires the native Explorer patch.",
-            "Show details only in the Explorer hover tooltip."
+            "Show file counts and sizes on the right only while hovering an Explorer row. Requires the native Explorer patch; tooltips remain available without it."
           ],
           "default": "always",
           "scope": "resource",

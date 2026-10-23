@@ -98,16 +98,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
           ? vscode.ConfigurationTarget.Workspace
           : vscode.ConfigurationTarget.Global
       await config.update('displayMode', mode, target)
-      vscode.window.setStatusBarMessage(`Assets Size: ${mode === 'always' ? 'Always show sizes' : 'Hover only'}`, 2500)
+      vscode.window.setStatusBarMessage(`Assets Size: ${mode === 'always' ? 'Always show sizes' : 'Show sizes on row hover'}`, 2500)
     }),
     new vscode.Disposable(() => { if (timer) { clearTimeout(timer) } pending.clear() }),
   )
-  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV3NoticeShown' : 'nativePatchV3NoticeShown'
+  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV4NoticeShown' : 'nativePatchV4NoticeShown'
   if (!nativePatchActive && !context.globalState.get(noticeKey, false)) {
     void context.globalState.update(noticeKey, true)
     void vscode.window.showInformationMessage(
       patchStatus.needsUpgrade
-        ? 'Update the native Explorer patch to fix leading digits in labels and keep colors on size text only. Original backups will be preserved.'
+        ? 'Update the native Explorer patch to show counts and sizes on row hover. Original backups will be preserved.'
         : 'Full inline labels require a reversible VS Code patch. It triggers an integrity warning and must be reapplied after editor updates.',
       patchStatus.needsUpgrade ? 'Update Patch' : 'Install Patch',
     ).then((action) => { if (action) { void vscode.commands.executeCommand('assetSize.installNativePatch') } })

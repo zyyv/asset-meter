@@ -86,7 +86,7 @@
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
 | `assetSize.enabled` | `true` | 启用体积计算和装饰。 |
-| `assetSize.displayMode` | `"always"` | 配合补丁显示行内标签；`"hover"` 仅显示悬停提示。 |
+| `assetSize.displayMode` | `"always"` | 常驻显示右侧标签；`"hover"` 仅在鼠标移到该文件或目录行时显示右侧数量和大小。两种行内显示均需补丁；未安装时仍可查看悬停提示。 |
 | `assetSize.fileExtensions` | 常见资源格式 | 不区分大小写，可省略前导点，支持 `.tar.gz`；`"*"` 匹配所有文件，`[]` 关闭文件装饰。 |
 | `assetSize.folderNames` | 常见资源目录 | 按任意层级的文件夹名匹配，不区分大小写；`"*"` 匹配所有文件夹，`[]` 关闭文件夹装饰。 |
 | `assetSize.exclude` | 版本控制、依赖、`.DS_Store` | 工作区相对 glob，支持 `**`、`*` 和花括号；被排除的文件不计入总量。 |
@@ -125,7 +125,7 @@
 | 命令面板名称 | 作用 |
 | --- | --- |
 | **Assets Size: Refresh Sizes** | 重新计算文件大小和文件夹总量。 |
-| **Assets Size: Toggle Always / Hover** | 切换行内标签和仅悬停提示模式。 |
+| **Assets Size: Toggle Always / Hover** | 切换右侧标签的常驻显示和悬停显示。 |
 | **Assets Size: Open Settings** | 打开本扩展的设置。 |
 | **Assets Size: Compress Image** | 压缩所选图片并打开对比。 |
 | **Assets Size: Install / Reapply Native Explorer Patch** | 安装、升级或重新应用可选补丁。 |
@@ -141,7 +141,7 @@ out/vs/workbench/workbench.desktop.main.js
 out/vs/workbench/workbench.desktop.main.css
 ```
 
-执行 **Assets Size: Install / Reapply Native Explorer Patch** 后重载窗口，需要拥有桌面应用程序目录的写入权限。补丁不会禁用完整性校验或代码签名检查，VS Code 可能提示安装已损坏。不安装补丁也可以使用悬停提示和图片压缩。
+执行 **Assets Size: Install / Reapply Native Explorer Patch** 后重载窗口，需要拥有桌面应用程序目录的写入权限。补丁不会禁用完整性校验或代码签名检查，VS Code 可能提示安装已损坏。不安装补丁也可以使用悬停提示和图片压缩。旧版补丁需要重新应用，才能支持悬停时显示右侧行内标签。
 
 写入前会校验编辑器代码结构；不支持的结构会被拒绝。最低 API 版本不代表补丁兼容每个 VS Code 版本或衍生编辑器。编辑器更新后需要重新应用。0.2.0 / 0.2.1 的旧补丁可直接升级并保留已验证的原始备份。
 
@@ -155,7 +155,7 @@ out/vs/workbench/workbench.desktop.main.css
 
 | 情况 | 检查方式 |
 | --- | --- |
-| 只有悬停提示，没有行内大小 | 安装或重新应用补丁并重载，选择 `"always"`，启用 `explorer.decorations.badges`。 |
+| 只有悬停提示，没有行内大小 | 安装或重新应用补丁并重载，启用 `explorer.decorations.badges`；`"hover"` 模式需要将鼠标移到对应文件或目录行。 |
 | 某项没有显示 | 检查匹配规则、排除规则、`assetSize.enabled`，以及是否为符号链接。 |
 | Remote SSH、WSL、Dev Containers | 统计在工作区扩展宿主运行；完整行内标签需要访问本地桌面程序文件，不能假定远程会话支持补丁。 |
 | 虚拟工作区 | 统计取决于文件系统提供者是否支持文件属性、目录枚举和变更监听。 |
