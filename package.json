@@ -1,6 +1,6 @@
 {
   "publisher": "zyyv",
-  "name": "vscode-asset-size",
+  "name": "assets-size",
   "displayName": "Assets Size",
   "version": "0.3.0",
   "packageManager": "pnpm@12.14.0",
@@ -310,8 +310,8 @@
     }
   },
   "scripts": {
-    "build": "node scripts/prepare-build.mjs && tsdown",
-    "watch": "node scripts/prepare-build.mjs && tsdown --watch",
+    "build": "tsdown",
+    "watch": "tsdown --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "pnpm build && vitest run",

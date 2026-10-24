@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Use `assets-size` for the extension package and VSIX filename, with extension ID `zyyv.assets-size` and display name Assets Size.
 - Add a compression plugin registry and an API for other extensions to register compressors.
 - Add TinyPNG cloud compression with a User Settings API key, cancellation and actionable errors.
 - Choose plugins before compression or switch and recompress in the comparison view.

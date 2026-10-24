@@ -46,12 +46,12 @@ try {
     engines: { vscode: '^1.90.0' },
     main: './extension.js',
     activationEvents: ['*'],
-    extensionDependencies: ['zyyv.vscode-asset-size'],
+    extensionDependencies: ['zyyv.assets-size'],
   }))
   await writeFile(path.join(errorFixture, 'extension.js'), `
     const vscode = require('vscode')
     exports.activate = async (context) => {
-      const api = await vscode.extensions.getExtension('zyyv.vscode-asset-size').activate()
+      const api = await vscode.extensions.getExtension('zyyv.assets-size').activate()
       const metadata = { description: 'Local error fixture; no network requests', describe: () => 'Test result' }
       context.subscriptions.push(api.registerCompressionPlugin({
         ...metadata, id: 'failed-api-test', label: 'Failed API (Test)', formats: ['png'],

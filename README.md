@@ -69,7 +69,7 @@ To use TinyPNG, [get an API key](https://tinypng.com/developers), then set `asse
 
 Failed API calls show an error and leave the original unchanged. A failed **Compress Again** keeps the previous successful result and restores the controls. Retry manually or choose another plugin; requests are not automatically retried. Saving stays disabled until both comparison images decode successfully, so undecodable output cannot be saved through the comparison.
 
-Other extensions can register compressors through `await vscode.extensions.getExtension('zyyv.vscode-asset-size').activate()`, then call `api.registerCompressionPlugin(plugin)` and add the returned disposable to their subscriptions. Plugins implement `CompressionPlugin` in `src/compression/plugins.ts`: an ID, label, description, supported formats, `describe(input)`, and `compress(input, context)` returning `{ result: Promise<Uint8Array>, cancel() }`. The picker and comparison dropdown discover registered plugins automatically. Plugins own their settings and encoding; the shared flow validates inputs and outputs, displays the comparison, and handles saving.
+Other extensions can register compressors through `await vscode.extensions.getExtension('zyyv.assets-size').activate()`, then call `api.registerCompressionPlugin(plugin)` and add the returned disposable to their subscriptions. Plugins implement `CompressionPlugin` in `src/compression/plugins.ts`: an ID, label, description, supported formats, `describe(input)`, and `compress(input, context)` returning `{ result: Promise<Uint8Array>, cancel() }`. The picker and comparison dropdown discover registered plugins automatically. Plugins own their settings and encoding; the shared flow validates inputs and outputs, displays the comparison, and handles saving.
 
 ## Configuration
 
@@ -190,7 +190,7 @@ pnpm package
 
 `pnpm test` builds the extension and runs the core, native patch and compression tests with Vitest. After a build, use `pnpm exec vitest run` to rerun tests or `pnpm exec vitest` to watch them. Use `pnpm lint --fix` to fix lint issues.
 
-`pnpm package` typechecks and builds through the `vscode:prepublish` hook, then writes `vscode-asset-size-<version>.vsix` in the repository root. Install it from the Extensions menu. Press **F5** to launch the example workspace in an Extension Development Host.
+`pnpm package` typechecks and builds through the `vscode:prepublish` hook, then writes `assets-size-<version>.vsix` in the repository root. Install it from the Extensions menu. Press **F5** to launch the example workspace in an Extension Development Host.
 
 For desktop integration and UI checks, use a disposable VS Code installation:
 

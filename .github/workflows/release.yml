@@ -25,40 +25,26 @@ jobs:
       - uses: pnpm/action-setup@v6
 
       - name: Verify release version
-        id: version
-        run: |
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict'
-          import { appendFileSync, readFileSync } from 'node:fs'
-          const { version } = JSON.parse(readFileSync('package.json', 'utf8'))
-          assert.match(version, /^\d+\.\d+\.\d+$/, 'Marketplace versions must use major.minor.patch.')
-          assert.equal(process.env.GITHUB_REF_NAME, `v${version}`, 'The tag must match package.json version.')
-          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`)
-          NODE
+        run: test "$GITHUB_REF_NAME" = "v$(jq -r .version package.json)"
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm package
       - run: pnpm exec vitest run
 
-      - name: Publish to Visual Studio Marketplace and Open VSX
+      - name: Publish to Visual Studio Marketplace
+        run: pnpm exec vsce publish --packagePath assets-size-*.vsix --skip-duplicate
         env:
           VSCE_PAT: ${{ secrets.VSCE_TOKEN }}
+
+      - name: Publish to Open VSX
+        run: pnpm exec ovsx publish --packagePath assets-size-*.vsix --skip-duplicate
+        env:
           OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          : "${VSCE_PAT:?Set the VSCE_TOKEN repository secret.}"
-          : "${OVSX_PAT:?Set the OVSX_TOKEN repository secret.}"
-          pnpm exec vsce publish --packagePath "vscode-asset-size-${VERSION}.vsix" --skip-duplicate
-          pnpm exec ovsx publish "vscode-asset-size-${VERSION}.vsix" --skip-duplicate
 
       - name: Create GitHub Release and upload VSIX
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if ! gh release view "v${VERSION}" > /dev/null 2>&1; then
-            gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" --generate-notes
-          fi
-          gh release upload "v${VERSION}" "vscode-asset-size-${VERSION}.vsix" --clobber
+        uses: softprops/action-gh-release@v3
+        with:
+          files: assets-size-*.vsix
+          generate_release_notes: true
+          fail_on_unmatched_files: true

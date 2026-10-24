@@ -69,7 +69,7 @@
 
 API 调用失败会提示错误，原文件保持不变。**Compress Again** 失败时保留上一次成功的结果，并恢复操作按钮。可手动重试或切换插件，不会自动重试请求。原图和压缩结果都成功解码后才允许保存，无法解码的损坏结果不能通过对比页保存。
 
-其他扩展可通过 `await vscode.extensions.getExtension('zyyv.vscode-asset-size').activate()` 获取 API，调用 `api.registerCompressionPlugin(plugin)` 并将返回的 disposable 加入订阅。插件实现 `src/compression/plugins.ts` 中的 `CompressionPlugin` 接口：提供 ID、名称、说明、支持的格式、`describe(input)`，以及返回 `{ result: Promise<Uint8Array>, cancel() }` 的 `compress(input, context)`。选择列表和对比页会自动发现已注册插件；插件负责配置与编码，共用流程负责校验输入输出、对比和保存。
+其他扩展可通过 `await vscode.extensions.getExtension('zyyv.assets-size').activate()` 获取 API，调用 `api.registerCompressionPlugin(plugin)` 并将返回的 disposable 加入订阅。插件实现 `src/compression/plugins.ts` 中的 `CompressionPlugin` 接口：提供 ID、名称、说明、支持的格式、`describe(input)`，以及返回 `{ result: Promise<Uint8Array>, cancel() }` 的 `compress(input, context)`。选择列表和对比页会自动发现已注册插件；插件负责配置与编码，共用流程负责校验输入输出、对比和保存。
 
 ## 配置
 
@@ -190,7 +190,7 @@ pnpm package
 
 `pnpm test` 会先构建扩展，再通过 Vitest 运行核心逻辑、原生补丁和图片压缩测试。已有构建产物时，用 `pnpm exec vitest run` 重新运行测试，或用 `pnpm exec vitest` 监听测试变化。自动修复 lint 问题用 `pnpm lint --fix`。
 
-`pnpm package` 会通过 `vscode:prepublish` 钩子检查类型、构建，并在仓库根目录生成 `vscode-asset-size-<version>.vsix`，可从扩展菜单安装。按 **F5** 会在扩展开发宿主中打开示例工作区。
+`pnpm package` 会通过 `vscode:prepublish` 钩子检查类型、构建，并在仓库根目录生成 `assets-size-<version>.vsix`，可从扩展菜单安装。按 **F5** 会在扩展开发宿主中打开示例工作区。
 
 桌面集成和 UI 检查使用独立的 VS Code 测试副本：
 
