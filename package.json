@@ -2,7 +2,7 @@
   "publisher": "zyyv",
   "name": "asset-meter",
   "displayName": "Asset Meter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "packageManager": "pnpm@12.14.0",
   "description": "See asset sizes and folder counts in Explorer. Compress JPEG, PNG and WebP with jSquash or TinyPNG, and compare before saving.",
   "license": "MIT",
