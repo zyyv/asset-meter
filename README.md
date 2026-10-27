@@ -48,6 +48,8 @@ The **Asset Meter** view in Explorer shows files and folders selected by `assetM
 
 Full sizes appear beside filenames, with file counts and totals beside folders; hover for exact bytes. Installing or updating the native Explorer patch aligns statistics at the right edge of each row, truncating long filenames first. Without the patch, full statistics still follow the filename. This view always shows descriptions, independently of `displayMode`. Units, precision and file count settings are shared with the original Explorer. Folder totals still include all files outside `exclude`, including files hidden from the filtered tree.
 
+Hover over a JPEG, PNG, GIF, WebP, AVIF, SVG, ICO or BMP in this view to see an image preview above **Path** and **Size** (including exact bytes). Previews support local and Remote Development files. Other files and virtual filesystem resources show text details; folders also retain their file counts and totals.
+
 Use **Refresh**, **Collapse All** and **Settings** in the view toolbar. Saves, creates, deletes, renames and rule changes refresh it automatically. Right-click a resource to reveal it in the original Explorer or diagnose matching; JPEG / PNG / WebP images also offer the existing compression workflow. An empty view links to matching settings.
 
 Click an SVG in Explorer or the Asset Meter view to open editable source on the left and an image preview on the right. The preview follows unsaved edits and reuses the same pane when switching SVGs. In Settings, **Asset Meter: Svg Open Mode** offers **Both** (default), **Image** and **Code**. Image shows the preview alone; Code uses the text editor alone. SVGs opened in a diff editor are left in the diff view.

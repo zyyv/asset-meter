@@ -61,8 +61,11 @@ try {
       }))
     }
   `)
-  await writeFile(path.join(workspace, 'assets/images/hero.png'), Buffer.alloc(1536))
-  await writeFile(path.join(workspace, 'assets/logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+  const hero = Buffer.alloc(1536)
+  Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64').copy(hero)
+  await writeFile(path.join(workspace, 'assets/images/hero.png'), hero)
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><circle cx="80" cy="80" r="64" fill="#f5b942"/></svg>'
+  await writeFile(path.join(workspace, 'assets/logo.svg'), svg)
   await writeFile(path.join(workspace, 'assets/notes.txt'), 'notes')
   await writeFile(path.join(workspace, 'docs/readme.txt'), 'unrelated')
   const settings = {
@@ -117,7 +120,7 @@ try {
     if (await row(value).getAttribute('aria-expanded') !== 'true') { await row(value).locator('.monaco-tl-twistie').click() }
   }
   await name('assets').waitFor({ state: 'visible' })
-  await waitFor(async () => (await row('assets').locator('.label-description').textContent()) === '3 files · 1.6 KB')
+  await waitFor(async () => (await row('assets').locator('.label-description').textContent()) === '3 files · 1.7 KB')
   await expand('assets')
   await name('images').waitFor({ state: 'visible' })
   await expand('images')
@@ -141,6 +144,35 @@ try {
   assert.equal(await name('notes.txt').count(), 0)
   assert.equal(await name('docs').count(), 0)
   assert.ok(await row('hero.png').locator('.file-icon').count(), 'file icon theme is used')
+  await mkdir(path.join(root, 'artifacts'), { recursive: true })
+  for (const [filename, relativePath, size] of [
+    ['hero.png', 'assets/images/hero.png', '1.5 KB (1,536 bytes)'],
+    ['logo.svg', 'assets/logo.svg', `${Buffer.byteLength(svg)} B (${Buffer.byteLength(svg)} bytes)`],
+  ]) {
+    await name(filename).hover()
+    const hover = page.locator('.monaco-hover').filter({ hasText: `Path: ${path.join(workspace, relativePath)}` })
+    await hover.waitFor({ state: 'visible' })
+    const preview = hover.getByRole('img', { name: 'Image preview', exact: true })
+    await waitFor(async () => await preview.evaluate(element => element.complete && element.naturalWidth > 0))
+    const text = (await hover.textContent() ?? '').replace(/\u00A0/g, ' ')
+    assert.ok(text.indexOf('Path:') < text.indexOf('Size:'), 'path precedes size')
+    assert.ok(text.includes(`Size: ${size}`), 'hover retains exact bytes')
+    assert.equal(await preview.evaluate(element => Math.round(element.getBoundingClientRect().width)), 280)
+    const layout = await hover.evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      const content = element.querySelector('table')
+      return { width: bounds.width, overflow: content.scrollWidth > content.clientWidth }
+    })
+    assert.ok(layout.width <= 320, `hover stays within 320px, including long paths (actual: ${layout.width}px)`)
+    assert.equal(layout.overflow, false, 'the complete path wraps without horizontal overflow')
+    const order = await hover.evaluate(element => element.querySelector('img').getBoundingClientRect().bottom <= element.querySelectorAll('p')[1].getBoundingClientRect().top)
+    assert.ok(order, 'the image is above the details')
+    await hover.screenshot({ path: path.join(root, `artifacts/asset-hover-${filename}.png`) })
+    await page.keyboard.press('Escape')
+    await page.mouse.move(0, 0)
+    await hover.waitFor({ state: 'hidden' })
+  }
+  console.log('Image hover UI passed: PNG and SVG images load above Path and Size, with exact bytes and bounded width.')
   await name('hero.png').click({ button: 'right' })
   await page.getByRole('menuitem', { name: /Compress Image/ }).waitFor({ state: 'visible' })
   await page.getByRole('menuitem', { name: /Reveal in Explorer/ }).waitFor({ state: 'visible' })
@@ -160,7 +192,6 @@ try {
   await mkdir(path.join(root, 'artifacts'), { recursive: true })
   await page.locator('.part.sidebar').screenshot({ path: path.join(root, 'artifacts/asset-tree-preview.png') })
   // Exercise SVG modes in the real editor, including unsaved native text edits.
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><circle cx="80" cy="80" r="64" fill="#f5b942"/></svg>'
   await writeFile(path.join(workspace, 'assets/logo.svg'), svg)
   const groups = page.locator('.editor-group-container')
   const source = page.locator('.editor-group-container .monaco-editor[data-uri$="/assets/logo.svg"]')

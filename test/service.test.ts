@@ -48,6 +48,15 @@ vi.mock('vscode', async () => {
   return {
     Uri,
     EventEmitter,
+    MarkdownString: class {
+      constructor(public value = '') {}
+      appendText(value: string) {
+        this.value += value.replace(/([\\`*_{}[\]()#+\-.!<>])/g, '\\$1').replace(/\n/g, '  \n')
+        return this
+      }
+
+      appendMarkdown(value: string) { this.value += value; return this }
+    },
     TreeItem: class {
       constructor(public label: string, public collapsibleState: number) {}
     },
@@ -464,7 +473,10 @@ it('asset tree shows the same full metrics, preserves theme icons and opens actu
     assert.equal(assetResource(logo), logo)
     assert.equal(assetResource(), undefined)
     assert.equal(await decorations.provideFileDecoration(item.resourceUri!, token), undefined)
-    assert.match(String(item.tooltip), /Size: 10 B/)
+    assert.ok(item.tooltip instanceof vscode.MarkdownString)
+    assert.match(item.tooltip.value, /^<table width="300"><tr><td>\n\n!\[Image preview\]\(<file:\/\/\/workspace\/assets\/logo\.png\|width=280>\)/)
+    assert.match(item.tooltip.value.replaceAll('<wbr>', ''), /Path: \/workspace\/assets\/logo\\\.png/)
+    assert.match(item.tooltip.value.replaceAll('<wbr>', ''), /Size: 10 B/)
     state.config.fileCountMode = 'direct'
     state.config.showFileCount = false
     state.config.units = 'binary'
@@ -475,9 +487,9 @@ it('asset tree shows the same full metrics, preserves theme icons and opens actu
   finally { decorations.dispose(); tree.dispose(); service.dispose() }
 })
 
-it('asset tree routes SVG files through the configured SVG opener, including uppercase extensions', async () => {
+it('asset tree previews SVGs and routes them through the configured opener, including uppercase extensions and punctuation', async () => {
   state.config.include = ['**/*.svg']
-  const uri = vscode.Uri.joinPath(assets, 'logo.SVG')
+  const uri = vscode.Uri.joinPath(assets, 'logo [draft] (#1).SVG')
   state.entries.set(uri.toString(), { type: vscode.FileType.File, size: 100 })
   const service = new SizeService()
   const tree = new AssetTreeProvider(service)
@@ -487,6 +499,9 @@ it('asset tree routes SVG files through the configured SVG opener, including upp
     const item = await tree.getTreeItem(file!)
     assert.equal(item.command?.command, 'assetMeter.openSvg')
     assert.deepEqual(item.command?.arguments, [uri])
+    assert.ok(item.tooltip instanceof vscode.MarkdownString)
+    assert.ok(item.tooltip.value.includes(`![Image preview](<${uri.toString()}|width=280>)\n\n`))
+    assert.ok(item.tooltip.value.replaceAll('<wbr>', '').includes('logo \\[draft\\] \\(\\#1\\)\\.SVG'))
   }
   finally { tree.dispose(); service.dispose() }
 })

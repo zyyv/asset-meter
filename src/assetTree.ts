@@ -81,12 +81,26 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
       const metrics = await this.service.measure(element.uri)
       const settings = this.service.settings(element.uri)
       item.description = inlineLabel(metrics, settings)
-      item.tooltip = `${element.uri.path}\n\n${describeMetrics(metrics, settings)}`
+      const details = `Path: ${element.uri.path}\n${describeMetrics(metrics, settings)}`
+      item.tooltip = details
+      if (!element.isDirectory && /\.(?:jpe?g|jpe|png|gif|webp|avif|svg|ico|bmp)$/i.test(element.uri.path)
+        && (element.uri.scheme === 'file' || element.uri.scheme === 'vscode-remote')) {
+        // Markdown strips max-width styles. A 300px layout table leaves room
+        // for hover padding; word breaks keep long paths from expanding it.
+        const tooltip = new vscode.MarkdownString(`<table width="300"><tr><td>\n\n![Image preview](<${element.uri.toString()}|width=280>)\n\n`)
+        tooltip.supportHtml = true
+        for (const [index, line] of details.split('\n').entries()) {
+          if (index) { tooltip.appendMarkdown('  \n') }
+          for (const character of line) { tooltip.appendText(character).appendMarkdown('<wbr>') }
+        }
+        tooltip.appendMarkdown('\n\n</td></tr></table>')
+        item.tooltip = tooltip
+      }
       item.accessibilityInformation = { label: `${element.name}, ${item.description}` }
     }
     catch (error) {
       if (!(error instanceof ScanCancelled)) { this.log.warn(`Asset tree measurement failed: ${element.uri.toString()}`, error) }
-      item.tooltip = element.uri.path
+      item.tooltip = `Path: ${element.uri.path}`
     }
     return item
   }
