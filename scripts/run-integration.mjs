@@ -7,7 +7,7 @@ import { runTests } from '@vscode/test-electron'
 import { build } from 'esbuild'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const temporary = await mkdtemp(path.join(tmpdir(), 'asset-size-integration-'))
+const temporary = await mkdtemp(path.join(tmpdir(), 'asset-meter-integration-'))
 const fixture = path.join(temporary, 'workspace')
 try {
   await mkdir(path.join(fixture, 'assets', 'nested'), { recursive: true })

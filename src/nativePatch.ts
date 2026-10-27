@@ -2,10 +2,11 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 
-const patchRevision = 4
-const marker = `ASSET_SIZE_NATIVE_PATCH_V${patchRevision}`
-const hasPatch = (source: string) => /ASSET_SIZE_NATIVE_PATCH_V\d+/.test(source)
-const backupName = '.asset-size-native-patch'
+const patchRevision = 5
+const marker = `ASSET_METER_NATIVE_PATCH_V${patchRevision}`
+const hasPatch = (source: string) => /ASSET_(?:METER|SIZE)_NATIVE_PATCH_V\d+/.test(source)
+const backupName = '.asset-meter-native-patch'
+const legacyBackupName = '.asset-size-native-patch'
 const targets = [
   'out/vs/workbench/api/node/extensionHostProcess.js',
   'out/vs/workbench/workbench.desktop.main.js',
@@ -28,7 +29,7 @@ const css = `\n/* ${marker} */
 .explorer-folders-view .explorer-item > .monaco-icon-label-container > .monaco-icon-name-container { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 `
 const rendererHelper = `
-function __assetSizeNativeBadgeV4(value) {
+function __assetMeterNativeBadgeV5(value) {
   const fragments = value.split(", ");
   const pattern = ${nativeBadgePattern};
   const own = fragments.find(part => pattern.test(part));
@@ -43,14 +44,14 @@ function __assetSizeNativeBadgeV4(value) {
     hover: !!parsed[2],
     size: separator < 0 ? text : text.slice(separator + 3),
     count: separator < 0 ? "" : text.slice(0, separator) + " ·",
-    color: ["var(--vscode-descriptionForeground)", "var(--vscode-assetSize-sizeWarning)", "var(--vscode-assetSize-sizeLarge)", "var(--vscode-assetSize-sizeCritical)"][tone],
+    color: ["var(--vscode-descriptionForeground)", "var(--vscode-assetMeter-sizeWarning)", "var(--vscode-assetMeter-sizeLarge)", "var(--vscode-assetMeter-sizeCritical)"][tone],
     other: fragments.filter(part => !pattern.test(part)).join(", ")
   };
 }
 `
 
 export function patchExtensionHost(source: string): string {
-  if (hasPatch(source)) { throw new Error('The extension host already contains an Assets Size patch.') }
+  if (hasPatch(source)) { throw new Error('The extension host already contains an Asset Meter patch.') }
   // Keep VS Code's original validation for every other badge. Only our delimited,
   // plain-text numeric labels gain the larger limit; quotes/CSS are never accepted.
   const expression = /([\w$]+)\.badge\.length\s*>\s*([\w$]+)(?=\s*\)\s*throw new Error\("The 'badge'-property must be undefined or a short character"\))/g
@@ -64,7 +65,7 @@ export function patchExtensionHost(source: string): string {
 }
 
 export function patchWorkbench(source: string): string {
-  if (hasPatch(source)) { throw new Error('The workbench already contains an Assets Size patch.') }
+  if (hasPatch(source)) { throw new Error('The workbench already contains an Asset Meter patch.') }
   const expression = /([\w$]+)\(`\.\$\{this\.itemBadgeClassName\}::after`,(`content: "\$\{([^}]+)\}"; color: \$\{[^}]+\};`),([\w$]+)\)/g
   let matches = 0
   const result = source.replace(expression, (_match, emit: string, content: string, value: string, sheet: string) => {
@@ -74,18 +75,18 @@ export function patchWorkbench(source: string): string {
     matches++
     const selector = '`' + '.${this.itemBadgeClassName}::after`'
     const ordinary = `${emit}(${selector},${content},${sheet})`
-    const fallback = content.replace(`\${${value}}`, '${__assetSizeData.other}')
+    const fallback = content.replace(`\${${value}}`, '${__assetMeterData.other}')
     const outside = `${emit}(${selector},${fallback},${sheet})`
     // Two distinct pseudo-elements keep counts neutral and severity colors on
     // the trailing size alone. No filename or Git decoration colors are changed.
     // Match the full tree row so hovering the twistie or right padding also
     // reveals the label, without leaving space for counts on other rows.
-    const rowSelector = '.explorer-folders-view .monaco-list-row${__assetSizeData.hover ? ":hover" : ""}'
+    const rowSelector = '.explorer-folders-view .monaco-list-row${__assetMeterData.hover ? ":hover" : ""}'
     const sizeSelector = '`' + `.monaco-workbench ${rowSelector} .monaco-icon-label.` + '${this.itemBadgeClassName}::after`'
-    const sizeContent = `\`content: "\${__assetSizeData.size}"; color: \${__assetSizeData.color} !important;${badgeStyle}\``
+    const sizeContent = `\`content: "\${__assetMeterData.size}"; color: \${__assetMeterData.color} !important;${badgeStyle}\``
     const countSelector = '`' + `${rowSelector} .` + '${this.itemBadgeClassName} > .monaco-icon-label-container::after`'
-    const countContent = `\`content: "\${__assetSizeData.count}";${countStyle}\``
-    return `(()=>{const __assetSizeData=__assetSizeNativeBadgeV4(${value});if(!__assetSizeData){${ordinary};return;}${outside};${emit}(${sizeSelector},${sizeContent},${sheet});if(__assetSizeData.count){${emit}(${countSelector},${countContent},${sheet});}})()`
+    const countContent = `\`content: "\${__assetMeterData.count}";${countStyle}\``
+    return `(()=>{const __assetMeterData=__assetMeterNativeBadgeV5(${value});if(!__assetMeterData){${ordinary};return;}${outside};${emit}(${sizeSelector},${sizeContent},${sheet});if(__assetMeterData.count){${emit}(${countSelector},${countContent},${sheet});}})()`
   })
   if (matches !== 2) { throw new Error(`Unsupported decoration renderer layout (${matches} matches). No program files were modified.`) }
   return `${result}\n/* ${marker} */\n${rendererHelper}`
@@ -93,9 +94,19 @@ export function patchWorkbench(source: string): string {
 
 function sha256(content: string): string { return createHash('sha256').update(content).digest('hex') }
 
-async function readManifest(appRoot: string): Promise<Manifest | undefined> {
+async function getBackupDirectory(appRoot: string): Promise<string> {
+  // Reuse legacy backups in place so renaming the extension never loses originals.
+  for (const name of [backupName, legacyBackupName]) {
+    const directory = path.join(appRoot, name)
+    try { await stat(path.join(directory, 'manifest.json')); return directory }
+    catch (error) { if (!isMissing(error)) { throw error } }
+  }
+  return path.join(appRoot, backupName)
+}
+
+async function readManifest(backupDirectory: string): Promise<Manifest | undefined> {
   let value: unknown
-  try { value = JSON.parse(await readFile(path.join(appRoot, backupName, 'manifest.json'), 'utf8')) }
+  try { value = JSON.parse(await readFile(path.join(backupDirectory, 'manifest.json'), 'utf8')) }
   catch (error) { if (isMissing(error)) { return undefined } throw error }
   const manifest = value as Manifest
   if (!manifest || manifest.schema !== 1 || typeof manifest.version !== 'string'
@@ -103,14 +114,14 @@ async function readManifest(appRoot: string): Promise<Manifest | undefined> {
     || !Array.isArray(manifest.files) || manifest.files.length !== targets.length
     || !manifest.files.every((file, index) => file.path === targets[index] && file.backup === `${index}.original`
       && /^[a-f0-9]{64}$/.test(file.originalHash) && /^[a-f0-9]{64}$/.test(file.patchedHash) && Number.isInteger(file.mode))) {
-    throw new Error('Invalid Assets Size backup manifest. Keep the backups and check the application directory.')
+    throw new Error('Invalid Asset Meter backup manifest. Keep the backups and check the application directory.')
   }
   return manifest
 }
 
 export async function getNativePatchStatus(appRoot: string): Promise<NativePatchStatus> {
-  const backupDirectory = path.join(appRoot, backupName)
-  const manifest = await readManifest(appRoot)
+  const backupDirectory = await getBackupDirectory(appRoot)
+  const manifest = await readManifest(backupDirectory)
   if (!manifest) { return { installed: false, needsUpgrade: false, appliedAt: 0, reason: 'The native Explorer patch is not installed.', backupDirectory } }
   const states = await Promise.all(manifest.files.map(async file => sha256(await readFile(path.join(appRoot, file.path), 'utf8'))))
   const patched = states.every((hash, index) => hash === manifest.files[index]!.patchedHash)
@@ -125,9 +136,9 @@ export async function getNativePatchStatus(appRoot: string): Promise<NativePatch
 }
 
 export async function installNativePatch(appRoot: string): Promise<PatchResult> {
-  const backupDirectory = path.join(appRoot, backupName)
+  const backupDirectory = await getBackupDirectory(appRoot)
   const version = String((JSON.parse(await readFile(path.join(appRoot, 'package.json'), 'utf8')) as { version: string }).version)
-  const existing = await readManifest(appRoot)
+  const existing = await readManifest(backupDirectory)
   if (existing && (await getNativePatchStatus(appRoot)).installed) { return { changed: false, backupDirectory } }
   const current = await Promise.all(targets.map(target => readFile(path.join(appRoot, target), 'utf8')))
   let originals = current
@@ -140,7 +151,7 @@ export async function installNativePatch(appRoot: string): Promise<PatchResult> 
     }))
   }
   if (originals.some(hasPatch)) {
-    throw new Error('An incomplete or modified Assets Size patch was detected. Run Restore Native Explorer Patch first and keep the backups.')
+    throw new Error('An incomplete or modified Asset Meter patch was detected. Run Restore Native Explorer Patch first and keep the backups.')
   }
   // Build and validate the entire plan before touching any application file.
   const patched = [patchExtensionHost(originals[0]!), patchWorkbench(originals[1]!), `${originals[2]}${css}`]
@@ -190,8 +201,8 @@ export async function installNativePatch(appRoot: string): Promise<PatchResult> 
 }
 
 export async function restoreNativePatch(appRoot: string): Promise<PatchResult> {
-  const backupDirectory = path.join(appRoot, backupName)
-  const manifest = await readManifest(appRoot)
+  const backupDirectory = await getBackupDirectory(appRoot)
+  const manifest = await readManifest(backupDirectory)
   if (!manifest) { return { changed: false, backupDirectory } }
   const originals = await Promise.all(manifest.files.map(async (file) => {
     const original = await readFile(path.join(backupDirectory, file.backup), 'utf8')
@@ -211,11 +222,11 @@ export async function restoreNativePatch(appRoot: string): Promise<PatchResult> 
 }
 
 async function atomicWrite(target: string, content: string, mode: number): Promise<void> {
-  const temporary = `${target}.asset-size-${randomBytes(6).toString('hex')}.tmp`
+  const temporary = `${target}.asset-meter-${randomBytes(6).toString('hex')}.tmp`
   try { await writeFile(temporary, content, { flag: 'wx', mode }); await rename(temporary, target) }
   finally {
     try { await unlink(temporary) }
-    catch (error) { if (!isMissing(error)) { console.error('[Assets Size] Failed to remove a temporary patch file.', error) } }
+    catch (error) { if (!isMissing(error)) { console.error('[Asset Meter] Failed to remove a temporary patch file.', error) } }
   }
 }
 

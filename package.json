@@ -1,8 +1,8 @@
 {
   "publisher": "zyyv",
-  "name": "assets-size",
-  "displayName": "Assets Size",
-  "version": "0.3.2",
+  "name": "asset-meter",
+  "displayName": "Asset Meter",
+  "version": "0.0.1",
   "packageManager": "pnpm@12.14.0",
   "description": "See asset sizes and folder counts in Explorer. Compress JPEG, PNG and WebP with jSquash or TinyPNG, and compare before saving.",
   "license": "MIT",
@@ -10,16 +10,17 @@
     "color": "#171C20",
     "theme": "dark"
   },
-  "homepage": "https://github.com/zyyv/vscode-assets-size#readme",
-  "qna": "https://github.com/zyyv/vscode-assets-size/issues",
+  "homepage": "https://github.com/zyyv/asset-meter#readme",
+  "qna": "https://github.com/zyyv/asset-meter/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zyyv/vscode-assets-size.git"
+    "url": "git+https://github.com/zyyv/asset-meter.git"
   },
   "bugs": {
-    "url": "https://github.com/zyyv/vscode-assets-size/issues"
+    "url": "https://github.com/zyyv/asset-meter/issues"
   },
   "keywords": [
+    "asset meter",
     "size",
     "assets",
     "explorer",
@@ -56,49 +57,49 @@
   "contributes": {
     "commands": [
       {
-        "command": "assetSize.refresh",
-        "title": "Assets Size: Refresh Sizes",
+        "command": "assetMeter.refresh",
+        "title": "Asset Meter: Refresh Sizes",
         "icon": "$(refresh)"
       },
       {
-        "command": "assetSize.toggleDisplayMode",
-        "title": "Assets Size: Toggle Always / Hover",
+        "command": "assetMeter.toggleDisplayMode",
+        "title": "Asset Meter: Toggle Always / Hover",
         "icon": "$(eye)"
       },
       {
-        "command": "assetSize.openSettings",
-        "title": "Assets Size: Open Settings",
+        "command": "assetMeter.openSettings",
+        "title": "Asset Meter: Open Settings",
         "icon": "$(gear)"
       },
       {
-        "command": "assetSize.compressImage",
-        "title": "Assets Size: Compress Image",
+        "command": "assetMeter.compressImage",
+        "title": "Asset Meter: Compress Image",
         "icon": "$(fold)"
       },
       {
-        "command": "assetSize.installNativePatch",
-        "title": "Assets Size: Install / Reapply Native Explorer Patch"
+        "command": "assetMeter.installNativePatch",
+        "title": "Asset Meter: Install / Reapply Native Explorer Patch"
       },
       {
-        "command": "assetSize.restoreNativePatch",
-        "title": "Assets Size: Restore Native Explorer Patch"
+        "command": "assetMeter.restoreNativePatch",
+        "title": "Asset Meter: Restore Native Explorer Patch"
       }
     ],
     "menus": {
       "explorer/context": [
         {
-          "command": "assetSize.refresh",
+          "command": "assetMeter.refresh",
           "group": "7_modification@90"
         },
         {
-          "command": "assetSize.compressImage",
+          "command": "assetMeter.compressImage",
           "when": "resourceExtname =~ /\\.(jpe?g|jpe|png|webp)$/i",
           "group": "7_modification@91"
         }
       ],
       "editor/title": [
         {
-          "command": "assetSize.compressImage",
+          "command": "assetMeter.compressImage",
           "when": "activeCustomEditorId == 'imagePreview.previewEditor' && resourceExtname =~ /\\.(jpe?g|jpe|png|webp)$/i",
           "group": "navigation@10"
         }
@@ -106,7 +107,7 @@
     },
     "colors": [
       {
-        "id": "assetSize.sizeWarning",
+        "id": "assetMeter.sizeWarning",
         "description": "Yellow size text for resources above the warning threshold.",
         "defaults": {
           "dark": "#D7BA7D",
@@ -116,7 +117,7 @@
         }
       },
       {
-        "id": "assetSize.sizeLarge",
+        "id": "assetMeter.sizeLarge",
         "description": "Orange size text for large resources.",
         "defaults": {
           "dark": "#F0883E",
@@ -126,7 +127,7 @@
         }
       },
       {
-        "id": "assetSize.sizeCritical",
+        "id": "assetMeter.sizeCritical",
         "description": "Red size text for very large resources.",
         "defaults": {
           "dark": "#F85149",
@@ -137,15 +138,15 @@
       }
     ],
     "configuration": {
-      "title": "Assets Size",
+      "title": "Asset Meter",
       "properties": {
-        "assetSize.enabled": {
+        "assetMeter.enabled": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
           "description": "Enable size calculations and decorations."
         },
-        "assetSize.displayMode": {
+        "assetMeter.displayMode": {
           "type": "string",
           "enum": [
             "always",
@@ -159,7 +160,7 @@
           "scope": "resource",
           "description": "Choose when size information is shown."
         },
-        "assetSize.include": {
+        "assetMeter.include": {
           "type": "array",
           "items": {
             "type": "string"
@@ -171,7 +172,7 @@
           ],
           "description": "Workspace-relative picomatch patterns selecting files and folders to decorate (case-insensitive, including dotfiles). Use **/* for all resources or [] for none. Directory patterns select the directory itself; add /** to select its descendants. Does not limit folder totals."
         },
-        "assetSize.exclude": {
+        "assetMeter.exclude": {
           "type": "array",
           "items": {
             "type": "string"
@@ -186,13 +187,13 @@
           ],
           "description": "Workspace-relative picomatch exclusions (case-insensitive, including dotfiles). Matching resources and their descendants are excluded from decorations and totals. Supports **, *, braces and extglobs."
         },
-        "assetSize.showFileCount": {
+        "assetMeter.showFileCount": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
           "description": "Show folder file counts before the size."
         },
-        "assetSize.fileCountMode": {
+        "assetMeter.fileCountMode": {
           "type": "string",
           "enum": [
             "recursive",
@@ -202,7 +203,7 @@
           "scope": "resource",
           "description": "Count all descendant files (recursive) or immediate child files (direct). Sizes always include descendants."
         },
-        "assetSize.units": {
+        "assetMeter.units": {
           "type": "string",
           "enum": [
             "binary",
@@ -216,7 +217,7 @@
           "scope": "resource",
           "description": "Size display units."
         },
-        "assetSize.decimalPlaces": {
+        "assetMeter.decimalPlaces": {
           "type": "integer",
           "minimum": 0,
           "maximum": 3,
@@ -224,13 +225,13 @@
           "scope": "resource",
           "description": "Number of decimal places for sizes."
         },
-        "assetSize.colorize": {
+        "assetMeter.colorize": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
           "description": "Color only the trailing size text by severity. Filenames and file counts keep their original colors."
         },
-        "assetSize.fileColorThresholdsMiB": {
+        "assetMeter.fileColorThresholdsMiB": {
           "type": "array",
           "items": {
             "type": "number",
@@ -246,7 +247,7 @@
           "scope": "resource",
           "description": "Yellow, orange and red file-size thresholds in MiB (1024 squared bytes). Values are sorted in ascending order."
         },
-        "assetSize.folderColorThresholdsMiB": {
+        "assetMeter.folderColorThresholdsMiB": {
           "type": "array",
           "items": {
             "type": "number",
@@ -262,27 +263,27 @@
           "scope": "resource",
           "description": "Yellow, orange and red folder-size thresholds in MiB. Values are sorted in ascending order."
         },
-        "assetSize.refreshDelay": {
+        "assetMeter.refreshDelay": {
           "type": "integer",
           "minimum": 100,
           "maximum": 5000,
           "default": 400,
           "description": "Delay in milliseconds for batching filesystem updates."
         },
-        "assetSize.compression.plugin": {
+        "assetMeter.compression.plugin": {
           "type": "string",
           "default": "jsquash",
           "scope": "resource",
           "description": "Preferred compression plugin ID, shown first in the plugin picker. Built-in plugins: jsquash (local) and tinypng (cloud). Registered plugins can also be selected."
         },
-        "assetSize.compression.tinypng.apiKey": {
+        "assetMeter.compression.tinypng.apiKey": {
           "type": "string",
           "default": "",
           "scope": "application",
           "ignoreSync": true,
           "description": "TinyPNG API key. Configure in User Settings; stored as plain text and excluded from Settings Sync. Selecting TinyPNG uploads images to api.tinify.com and uses your API quota."
         },
-        "assetSize.compression.quality": {
+        "assetMeter.compression.quality": {
           "type": "integer",
           "minimum": 1,
           "maximum": 100,
@@ -290,7 +291,7 @@
           "scope": "resource",
           "description": "jSquash JPEG and WebP compression quality. jSquash PNG is lossless. TinyPNG chooses quality automatically and ignores this setting."
         },
-        "assetSize.compression.saveBehavior": {
+        "assetMeter.compression.saveBehavior": {
           "type": "string",
           "enum": [
             "ask",

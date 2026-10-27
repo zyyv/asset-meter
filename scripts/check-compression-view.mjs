@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const executable = process.env.VSCODE_EXECUTABLE_PATH
 if (!executable) { throw new Error('Set VSCODE_EXECUTABLE_PATH to a VS Code executable. This check uses a temporary workspace and profile.') }
-const temporary = await mkdtemp(path.join(tmpdir(), 'asset-size-compression-ui-'))
+const temporary = await mkdtemp(path.join(tmpdir(), 'asset-meter-compression-ui-'))
 const workspace = path.join(temporary, 'workspace')
 const profile = path.join(temporary, 'profile')
 let child
@@ -37,21 +37,21 @@ try {
   await new Promise(resolve => server.close(resolve))
   await mkdir(path.join(workspace, '.vscode'), { recursive: true })
   await mkdir(path.join(profile, 'User'), { recursive: true })
-  const errorFixture = path.join(temporary, 'extensions', 'asset-size-error-fixture')
+  const errorFixture = path.join(temporary, 'extensions', 'asset-meter-error-fixture')
   await mkdir(errorFixture, { recursive: true })
   await writeFile(path.join(errorFixture, 'package.json'), JSON.stringify({
-    name: 'asset-size-error-fixture',
+    name: 'asset-meter-error-fixture',
     publisher: 'test',
     version: '1.0.0',
     engines: { vscode: '^1.90.0' },
     main: './extension.js',
     activationEvents: ['*'],
-    extensionDependencies: ['zyyv.assets-size'],
+    extensionDependencies: ['zyyv.asset-meter'],
   }))
   await writeFile(path.join(errorFixture, 'extension.js'), `
     const vscode = require('vscode')
     exports.activate = async (context) => {
-      const api = await vscode.extensions.getExtension('zyyv.assets-size').activate()
+      const api = await vscode.extensions.getExtension('zyyv.asset-meter').activate()
       const metadata = { description: 'Local error fixture; no network requests', describe: () => 'Test result' }
       context.subscriptions.push(api.registerCompressionPlugin({
         ...metadata, id: 'failed-api-test', label: 'Failed API (Test)', formats: ['png'],
@@ -116,7 +116,7 @@ try {
     await page.getByText(label, { exact: true }).last().click()
   }
   await chooseCompression('sample.png', 'Failed API (Test)')
-  await page.getByText('Assets Size compression failed: TinyPNG request failed (HTTP 503). Try again later or use jSquash.', { exact: true }).last().waitFor()
+  await page.getByText('Asset Meter compression failed: TinyPNG request failed (HTTP 503). Try again later or use jSquash.', { exact: true }).last().waitFor()
   assert.deepEqual(await readFile(path.join(workspace, 'sample.png')), originalPng)
   let frame = await openImage('sample.png')
   await waitFor(() => frame.locator('.pair img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth === 256 && image.naturalHeight === 160)), 'decoded comparison images')
@@ -183,7 +183,7 @@ try {
   await waitFor(async () => (await readFile(destination)).length < originalPng.length, 'saved new image')
   await waitFor(async () => (await frame.locator('#status').textContent()).startsWith('Saved:'), 'saved status')
   assert.deepEqual(await readFile(path.join(workspace, 'sample.png')), originalPng)
-  assert.equal(JSON.parse(await readFile(userSettings, 'utf8'))['assetSize.compression.saveBehavior'], undefined)
+  assert.equal(JSON.parse(await readFile(userSettings, 'utf8'))['assetMeter.compression.saveBehavior'], undefined)
   await discard(frame)
   console.log('Compression UI: Save As Once creates a smaller copy and does not remember permission.')
 
@@ -219,7 +219,7 @@ try {
   await waitFor(() => frame.locator('.pair img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth === 256)), 'JPEG comparison')
   await chooseSave(frame, 'Overwrite Original — Always Allow')
   await waitFor(async () => (await frame.locator('#status').textContent()).startsWith('Saved:'), 'JPEG overwritten')
-  await waitFor(async () => JSON.parse(await readFile(userSettings, 'utf8'))['assetSize.compression.saveBehavior'] === 'overwrite', 'remembered User setting')
+  await waitFor(async () => JSON.parse(await readFile(userSettings, 'utf8'))['assetMeter.compression.saveBehavior'] === 'overwrite', 'remembered User setting')
   await page.locator('.explorer-folders-view .explorer-item').filter({ hasText: /^sample\.png\b/ }).first().dblclick()
   await page.getByRole('tab', { name: /Compress: sample.jpg/ }).first().click()
   frame = await waitFor(async () => {

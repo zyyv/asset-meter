@@ -7,7 +7,7 @@ async function checkResponse(response: Response): Promise<void> {
   if (response.ok) { return }
   await response.body?.cancel()
   // Keep service responses and credentials out of user-visible errors.
-  if (response.status === 401) { throw new Error('TinyPNG API key is invalid. Update assetSize.compression.tinypng.apiKey in User Settings.') }
+  if (response.status === 401) { throw new Error('TinyPNG API key is invalid. Update assetMeter.compression.tinypng.apiKey in User Settings.') }
   if (response.status === 402 || response.status === 429) { throw new Error('TinyPNG quota or rate limit reached. Check your account or try again later.') }
   if (response.status === 413) { throw new Error('TinyPNG rejected this image because it is too large. Choose a smaller image or use jSquash.') }
   throw new Error(`TinyPNG request failed (HTTP ${response.status}). Try again later or use jSquash.`)
@@ -44,7 +44,7 @@ export function createTinyPngPlugin(request: typeof fetch = fetch, timeoutMs = 1
     describe: ({ format }) => `${format.toUpperCase()} · automatic optimization`,
     compress: ({ bytes }, context) => {
       const apiKey = context.getSetting('tinypng.apiKey', '').trim()
-      if (!apiKey) { throw new Error('Set assetSize.compression.tinypng.apiKey in User Settings before using TinyPNG.') }
+      if (!apiKey) { throw new Error('Set assetMeter.compression.tinypng.apiKey in User Settings before using TinyPNG.') }
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(new Error('TinyPNG compression exceeded 120 seconds. Try a smaller image or use jSquash.')), timeoutMs)
       const result = (async () => {

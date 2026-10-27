@@ -4,9 +4,7 @@
 !README.zh-CN.md
 !CHANGELOG.md
 !LICENSE
-!THIRD_PARTY_NOTICES.md
 !images/icon.png
-!images/compression.png
 !dist/extension.js
 !dist/native-patch.js
 !dist/compression-preview.js

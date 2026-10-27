@@ -33,18 +33,18 @@ jobs:
       - run: pnpm exec vitest run
 
       - name: Publish to Visual Studio Marketplace
-        run: pnpm exec vsce publish --packagePath assets-size-*.vsix --skip-duplicate
+        run: pnpm exec vsce publish --packagePath asset-meter-*.vsix --skip-duplicate
         env:
           VSCE_PAT: ${{ secrets.VSCE_TOKEN }}
 
       - name: Publish to Open VSX
-        run: pnpm exec ovsx publish --packagePath assets-size-*.vsix --skip-duplicate
+        run: pnpm exec ovsx publish --packagePath asset-meter-*.vsix --skip-duplicate
         env:
           OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
 
       - name: Create GitHub Release and upload VSIX
         uses: softprops/action-gh-release@v3
         with:
-          files: assets-size-*.vsix
+          files: asset-meter-*.vsix
           generate_release_notes: true
           fail_on_unmatched_files: true

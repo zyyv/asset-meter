@@ -12,8 +12,8 @@ import { chromium } from 'playwright'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const executable = process.env.VSCODE_EXECUTABLE_PATH
 if (!executable) { throw new Error('VSCODE_EXECUTABLE_PATH must point to a patched, disposable VS Code test installation.') }
-const temporary = await mkdtemp(path.join(tmpdir(), 'asset-size-native-ui-'))
-const workspace = path.join(temporary, 'asset-size-demo')
+const temporary = await mkdtemp(path.join(tmpdir(), 'asset-meter-native-ui-'))
+const workspace = path.join(temporary, 'asset-meter-demo')
 const profile = path.join(temporary, 'profile')
 let browser
 let child
@@ -41,10 +41,10 @@ try {
   await writeFile(path.join(workspace, 'assets/images/texture.jpg'), Buffer.alloc(1.5 * 1024 ** 2))
   await writeFile(path.join(workspace, 'assets/logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
   const settings = {
-    'assetSize.include': ['**/*.{png,jpg,svg}', '**/{assets,images}'],
-    'assetSize.folderColorThresholdsMiB': [1, 3, 5],
-    'assetSize.displayMode': 'always',
-    'assetSize.units': 'decimal',
+    'assetMeter.include': ['**/*.{png,jpg,svg}', '**/{assets,images}'],
+    'assetMeter.folderColorThresholdsMiB': [1, 3, 5],
+    'assetMeter.displayMode': 'always',
+    'assetMeter.units': 'decimal',
   }
   const settingsFile = path.join(workspace, '.vscode/settings.json')
   await writeFile(settingsFile, JSON.stringify(settings))
@@ -73,7 +73,7 @@ try {
     return container && getComputedStyle(container, '::after').content.includes('3 files')
   }))
   assert.match(await asset.evaluate(element => getComputedStyle(element, '::after').content), /7\.9 MB/)
-  assert.equal(await page.locator('[id="assetSize.explorer"]').count(), 0, 'No Asset Size panel')
+  assert.equal(await page.locator('[id="assetMeter.explorer"]').count(), 0, 'No Asset Meter panel')
   const assetRow = asset.locator('xpath=ancestor::*[contains(@class,"monaco-list-row")][1]')
   await assetRow.locator('.monaco-tl-twistie').click()
   const images = page.locator('.explorer-folders-view .explorer-item').filter({ hasText: /^images$/ }).first()
@@ -86,7 +86,7 @@ try {
   await page.keyboard.press(`${prefix}+1`)
   const colors = await hero.evaluate((element) => {
     const probe = document.createElement('span')
-    probe.style.color = 'var(--vscode-assetSize-sizeCritical)'
+    probe.style.color = 'var(--vscode-assetMeter-sizeCritical)'
     element.append(probe)
     const expected = getComputedStyle(probe).color
     probe.remove()
@@ -103,7 +103,7 @@ try {
   await mkdir(path.join(root, 'artifacts'), { recursive: true })
   await page.locator('.part.sidebar').screenshot({ path: path.join(root, 'artifacts/native-explorer-preview.png') })
 
-  await writeFile(settingsFile, JSON.stringify({ ...settings, 'assetSize.displayMode': 'hover' }))
+  await writeFile(settingsFile, JSON.stringify({ ...settings, 'assetMeter.displayMode': 'hover' }))
   await page.mouse.move(0, 0)
   await waitFor(() => hero.evaluate(element => !getComputedStyle(element, '::after').content.includes('6.3 MB')))
   assert.equal(await asset.evaluate(element => getComputedStyle(element.querySelector('.monaco-icon-label-container'), '::after').content.includes('3 files')), false)

@@ -42,7 +42,7 @@ export class ImageCompression implements vscode.Disposable {
       if (stat.size > maxInputBytes) { throw new Error('Choose an image smaller than 50 MiB.') }
       const original = await vscode.workspace.fs.readFile(uri)
       validateImage(original, format)
-      const preferred = vscode.workspace.getConfiguration('assetSize.compression', uri).get('plugin', 'jsquash')
+      const preferred = vscode.workspace.getConfiguration('assetMeter.compression', uri).get('plugin', 'jsquash')
       const choices = this.plugins.forFormat(format).map(plugin => ({
         label: plugin.label,
         description: plugin.id === preferred ? 'Default' : undefined,
@@ -59,13 +59,13 @@ export class ImageCompression implements vscode.Disposable {
     }
     catch (error) {
       if (error instanceof Error && error.message === 'Compression cancelled.') { return }
-      void vscode.window.showErrorMessage(`Assets Size compression failed: ${error instanceof Error ? error.message : String(error)}`)
+      void vscode.window.showErrorMessage(`Asset Meter compression failed: ${error instanceof Error ? error.message : String(error)}`)
     }
     finally { this.pending.delete(key) }
   }
 
   private compressionInput(uri: vscode.Uri, bytes: Uint8Array, format: ImageFormat) {
-    const setting = vscode.workspace.getConfiguration('assetSize.compression', uri).get<number>('quality', 75)
+    const setting = vscode.workspace.getConfiguration('assetMeter.compression', uri).get<number>('quality', 75)
     const quality = Number.isFinite(setting) ? Math.min(100, Math.max(1, Math.round(setting))) : 75
     return { bytes, format, quality }
   }
@@ -80,7 +80,7 @@ export class ImageCompression implements vscode.Disposable {
       if (this.disposed || token.isCancellationRequested) { throw new Error('Compression cancelled.') }
       const job = this.plugins.start(plugin.id, this.compressionInput(uri, bytes, format), {
         distDirectory: vscode.Uri.joinPath(this.context.extensionUri, 'dist').fsPath,
-        getSetting: (key, fallback) => vscode.workspace.getConfiguration('assetSize.compression', uri).get(key, fallback),
+        getSetting: (key, fallback) => vscode.workspace.getConfiguration('assetMeter.compression', uri).get(key, fallback),
       })
       this.jobs.add(job)
       onJob?.(job)
@@ -92,7 +92,7 @@ export class ImageCompression implements vscode.Disposable {
   }
 
   private openComparison(uri: vscode.Uri, original: Uint8Array, compressed: Uint8Array, plugin: CompressionPlugin): void {
-    const panel = vscode.window.createWebviewPanel('assetSize.imageDiff', `Compress: ${basename(uri.path)}`, vscode.ViewColumn.Active, {
+    const panel = vscode.window.createWebviewPanel('assetMeter.imageDiff', `Compress: ${basename(uri.path)}`, vscode.ViewColumn.Active, {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist')],
     })
@@ -190,7 +190,7 @@ figure { margin: 0; min-width: 0; background: var(--vscode-editor-background); }
       catch (error) {
         const text = error instanceof Error ? error.message : String(error)
         await panel.webview.postMessage({ type: 'saveResult', saved: false, text })
-        void vscode.window.showErrorMessage(`Assets Size could not save the image: ${text}`)
+        void vscode.window.showErrorMessage(`Asset Meter could not save the image: ${text}`)
       }
       finally { saving = false }
     })
@@ -198,7 +198,7 @@ figure { margin: 0; min-width: 0; background: var(--vscode-editor-background); }
   }
 
   private async save(uri: vscode.Uri, original: Uint8Array, compressed: Uint8Array): Promise<vscode.Uri | undefined> {
-    const config = vscode.workspace.getConfiguration('assetSize.compression')
+    const config = vscode.workspace.getConfiguration('assetMeter.compression')
     const behavior = config.get<SaveBehavior>('saveBehavior', 'ask')
     let mode: Exclude<SaveBehavior, 'ask'>
     let remember = false

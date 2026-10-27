@@ -6,7 +6,7 @@ import { SizeDecorationProvider } from './decorations'
 import { getNativePatchStatus, installNativePatch, restoreNativePatch } from './nativePatch'
 import { SizeService } from './service'
 
-export interface AssetSizeApi {
+export interface AssetMeterApi {
   getSize: (uri: vscode.Uri) => Promise<Metrics | undefined>
   registerCompressionPlugin: (plugin: CompressionPlugin) => vscode.Disposable
 }
@@ -14,7 +14,7 @@ export interface AssetSizeApi {
 export type { CompressionContext, CompressionInput, CompressionPlugin } from './compression/plugins'
 export type { CompressionJob } from './compression/runner'
 
-export async function activate(context: vscode.ExtensionContext): Promise<AssetSizeApi> {
+export async function activate(context: vscode.ExtensionContext): Promise<AssetMeterApi> {
   const service = new SizeService()
   const compression = new ImageCompression(context, (uri) => { void service.refresh([uri]) })
   const patchStatus = await getNativePatchStatus(vscode.env.appRoot).catch(error => ({
@@ -38,7 +38,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
     if (service.isExcluded(uri)) { return }
     pending.set(uri.toString(), uri)
     if (timer) { return }
-    const delay = vscode.workspace.getConfiguration('assetSize').get('refreshDelay', 400)
+    const delay = vscode.workspace.getConfiguration('assetMeter').get('refreshDelay', 400)
     timer = setTimeout(flush, delay)
   }
   const watchers = new Map<string, vscode.Disposable>()
@@ -60,7 +60,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
     service,
     decorations,
     compression,
-    vscode.commands.registerCommand('assetSize.compressImage', (uri?: vscode.Uri) => compression.compress(uri)),
+    vscode.commands.registerCommand('assetMeter.compressImage', (uri?: vscode.Uri) => compression.compress(uri)),
     vscode.window.registerFileDecorationProvider(decorations),
     new vscode.Disposable(() => { for (const watcher of watchers.values()) { watcher.dispose() } watchers.clear() }),
     vscode.workspace.onDidSaveTextDocument((document) => { queue(document.uri) }),
@@ -68,34 +68,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
     vscode.workspace.onDidDeleteFiles((event) => { event.files.forEach(queue) }),
     vscode.workspace.onDidRenameFiles((event) => { event.files.forEach((file) => { queue(file.oldUri); queue(file.newUri) }) }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('assetSize')) { service.invalidate(undefined, true) }
+      if (event.affectsConfiguration('assetMeter')) { service.invalidate(undefined, true) }
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => { watchWorkspace(); service.invalidate(undefined, true) }),
-    vscode.commands.registerCommand('assetSize.refresh', () => { service.invalidate() }),
-    vscode.commands.registerCommand('assetSize.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
-    vscode.commands.registerCommand('assetSize.installNativePatch', async () => {
+    vscode.commands.registerCommand('assetMeter.refresh', () => { service.invalidate() }),
+    vscode.commands.registerCommand('assetMeter.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
+    vscode.commands.registerCommand('assetMeter.installNativePatch', async () => {
       try {
         await installNativePatch(vscode.env.appRoot)
         const action = await vscode.window.showInformationMessage('Native Explorer patch installed. Original files are backed up. Reload to show file counts followed by sizes.', 'Reload Window')
         if (action) { await vscode.commands.executeCommand('workbench.action.reloadWindow') }
       }
       catch (error) {
-        void vscode.window.showErrorMessage(`Assets Size patch installation failed: ${error instanceof Error ? error.message : String(error)}`)
+        void vscode.window.showErrorMessage(`Asset Meter patch installation failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     }),
-    vscode.commands.registerCommand('assetSize.restoreNativePatch', async () => {
+    vscode.commands.registerCommand('assetMeter.restoreNativePatch', async () => {
       try {
         await restoreNativePatch(vscode.env.appRoot)
         const action = await vscode.window.showInformationMessage('Original VS Code files restored. Backups are retained. Reload the window to apply the change.', 'Reload Window')
         if (action) { await vscode.commands.executeCommand('workbench.action.reloadWindow') }
       }
       catch (error) {
-        void vscode.window.showErrorMessage(`Assets Size patch restoration failed: ${error instanceof Error ? error.message : String(error)}`)
+        void vscode.window.showErrorMessage(`Asset Meter patch restoration failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     }),
-    vscode.commands.registerCommand('assetSize.toggleDisplayMode', async () => {
+    vscode.commands.registerCommand('assetMeter.toggleDisplayMode', async () => {
       const uri = vscode.window.activeTextEditor?.document.uri ?? vscode.workspace.workspaceFolders?.[0]?.uri
-      const config = vscode.workspace.getConfiguration('assetSize', uri)
+      const config = vscode.workspace.getConfiguration('assetMeter', uri)
       const mode = config.get('displayMode', 'always') === 'always' ? 'hover' : 'always'
       const target = config.inspect('displayMode')?.workspaceFolderValue !== undefined
         ? vscode.ConfigurationTarget.WorkspaceFolder
@@ -103,11 +103,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
           ? vscode.ConfigurationTarget.Workspace
           : vscode.ConfigurationTarget.Global
       await config.update('displayMode', mode, target)
-      vscode.window.setStatusBarMessage(`Assets Size: ${mode === 'always' ? 'Always show sizes' : 'Show sizes on row hover'}`, 2500)
+      vscode.window.setStatusBarMessage(`Asset Meter: ${mode === 'always' ? 'Always show sizes' : 'Show sizes on row hover'}`, 2500)
     }),
     new vscode.Disposable(() => { if (timer) { clearTimeout(timer) } pending.clear() }),
   )
-  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV4NoticeShown' : 'nativePatchV4NoticeShown'
+  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV5NoticeShown' : 'nativePatchV5NoticeShown'
   if (!nativePatchActive && !context.globalState.get(noticeKey, false)) {
     void context.globalState.update(noticeKey, true)
     void vscode.window.showInformationMessage(
@@ -115,7 +115,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetS
         ? 'Update the native Explorer patch to show counts and sizes on row hover. Original backups will be preserved.'
         : 'Full inline labels require a reversible VS Code patch. It triggers an integrity warning and must be reapplied after editor updates.',
       patchStatus.needsUpgrade ? 'Update Patch' : 'Install Patch',
-    ).then((action) => { if (action) { void vscode.commands.executeCommand('assetSize.installNativePatch') } })
+    ).then((action) => { if (action) { void vscode.commands.executeCommand('assetMeter.installNativePatch') } })
   }
   return {
     getSize: async uri => service.isExcluded(uri) || !service.settings(uri).enabled ? undefined : service.measure(uri),

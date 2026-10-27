@@ -27,7 +27,7 @@ export class SizeService implements vscode.Disposable {
     const key = root?.uri.toString() ?? uri.toString()
     let matcher = this.matchers.get(key)
     if (!matcher) {
-      const config = vscode.workspace.getConfiguration('assetSize', uri)
+      const config = vscode.workspace.getConfiguration('assetMeter', uri)
       matcher = new ResourceMatcher({
         enabled: config.get('enabled', true),
         displayMode: config.get('displayMode', 'always'),

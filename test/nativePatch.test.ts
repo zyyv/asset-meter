@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { runInNewContext, Script } from 'node:vm'
@@ -11,7 +11,7 @@ const host = `class Decoration { static validate(t) { if(typeof t.badge=="string
 const renderer = 'globalThis.one = function(i,t,e){emit(`.${this.itemBadgeClassName}::after`,`content: "${i}"; color: ${color(t)};`,e)};globalThis.many=function(i,t,e){emit(`.${this.itemBadgeClassName}::after`,`content: "${i.join(", ")}"; color: ${t};`,e)};'
 const targetPaths = ['out/vs/workbench/api/node/extensionHostProcess.js', 'out/vs/workbench/workbench.desktop.main.js', 'out/vs/workbench/workbench.desktop.main.css']
 
-it('patched host accepts only safe full Asset Size labels and preserves other badge validation', () => {
+it('patched host accepts only safe full Asset Meter labels and preserves other badge validation', () => {
   const context: { validate?: (value: { badge: string }) => boolean } = {}
   runInNewContext(patchExtensionHost(host), context)
   assert.ok(context.validate)
@@ -45,7 +45,7 @@ it('renderer scopes sizes to Explorer, keeps counts neutral, and preserves ordin
   assert.match(emitted[1]![1], /content: ""/)
   assert.equal(emitted[2]![0], '.monaco-workbench .explorer-folders-view .monaco-list-row .monaco-icon-label.example::after')
   assert.match(emitted[2]![1], /content: "1.2 MB"/)
-  assert.match(emitted[2]![1], /var\(--vscode-assetSize-sizeCritical\)/)
+  assert.match(emitted[2]![1], /var\(--vscode-assetMeter-sizeCritical\)/)
   assert.match(emitted[3]![1], /content: "M"/)
   assert.equal(emitted[5]![0], '.explorer-folders-view .monaco-list-row .example > .monaco-icon-label-container::after')
   assert.match(emitted[5]![1], /content: "24 files ·"/)
@@ -67,7 +67,7 @@ it('hover labels reveal counts and sizes only on the hovered Explorer row and pr
   assert.deepEqual(emitted[0], ['.example::after', 'content: "M"; color: red;'])
   assert.equal(emitted[1]![0], '.monaco-workbench .explorer-folders-view .monaco-list-row:hover .monaco-icon-label.example::after')
   assert.match(emitted[1]![1], /content: "1.2 MB"/)
-  assert.match(emitted[1]![1], /var\(--vscode-assetSize-sizeCritical\)/)
+  assert.match(emitted[1]![1], /var\(--vscode-assetMeter-sizeCritical\)/)
   assert.equal(emitted[2]![0], '.explorer-folders-view .monaco-list-row:hover .example > .monaco-icon-label-container::after')
   assert.match(emitted[2]![1], /content: "24 files ·"/)
   assert.match(emitted[2]![1], /var\(--vscode-descriptionForeground\)/)
@@ -78,7 +78,7 @@ it('hover labels reveal counts and sizes only on the hovered Explorer row and pr
 })
 
 async function fixture(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), 'asset-size-patch-'))
+  const root = await mkdtemp(path.join(tmpdir(), 'asset-meter-patch-'))
   for (const file of targetPaths) { await mkdir(path.dirname(path.join(root, file)), { recursive: true }) }
   await writeFile(path.join(root, 'package.json'), '{"version":"test-1"}')
   await writeFile(path.join(root, targetPaths[0]!), host)
@@ -110,7 +110,7 @@ it('unsupported editor layouts are rejected before any program file is modified'
     await writeFile(path.join(root, targetPaths[1]!), 'unknown renderer')
     await assert.rejects(installNativePatch(root), /Unsupported decoration renderer layout/)
     assert.equal(await readFile(path.join(root, targetPaths[0]!), 'utf8'), host)
-    assert.ok(!(await readdir(root)).includes('.asset-size-native-patch'))
+    assert.ok(!(await readdir(root)).includes('.asset-meter-native-patch'))
   }
   finally { await rm(root, { recursive: true, force: true }) }
 })
@@ -120,11 +120,11 @@ it('upgrading a previous patch adds row hover support and retains the original b
   try {
     const originals = await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8')))
     await installNativePatch(root)
-    const manifestPath = path.join(root, '.asset-size-native-patch', 'manifest.json')
+    const manifestPath = path.join(root, '.asset-meter-native-patch', 'manifest.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { revision: number, files: { patchedHash: string }[] }
     manifest.revision = 3
     for (const [index, file] of targetPaths.entries()) {
-      const older = (await readFile(path.join(root, file), 'utf8')).replaceAll('ASSET_SIZE_NATIVE_PATCH_V4', 'ASSET_SIZE_NATIVE_PATCH_V3')
+      const older = (await readFile(path.join(root, file), 'utf8')).replaceAll('ASSET_METER_NATIVE_PATCH_V5', 'ASSET_METER_NATIVE_PATCH_V3')
       await writeFile(path.join(root, file), older)
       manifest.files[index]!.patchedHash = createHash('sha256').update(older).digest('hex')
     }
@@ -133,9 +133,47 @@ it('upgrading a previous patch adds row hover support and retains the original b
     assert.equal((await installNativePatch(root)).changed, true)
     assert.equal((await getNativePatchStatus(root)).installed, true)
     assert.match(await readFile(path.join(root, targetPaths[1]!), 'utf8'), /:hover/)
-    assert.ok(!(await readdir(root)).some(file => file.startsWith('.asset-size-native-patch.')))
+    assert.ok(!(await readdir(root)).some(file => file.startsWith('.asset-meter-native-patch.')))
     await restoreNativePatch(root)
     assert.deepEqual(await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8'))), originals)
+  }
+  finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it.each(['restore', 'upgrade'] as const)('renamed extension can %s a legacy Assets Size patch without losing its original backups', async (action) => {
+  const root = await fixture()
+  try {
+    const originals = await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8')))
+    await installNativePatch(root)
+    const backupDirectory = path.join(root, '.asset-size-native-patch')
+    await rename(path.join(root, '.asset-meter-native-patch'), backupDirectory)
+    const manifestPath = path.join(backupDirectory, 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { revision: number, files: { patchedHash: string }[] }
+    manifest.revision = 4
+    for (const [index, file] of targetPaths.entries()) {
+      const legacy = (await readFile(path.join(root, file), 'utf8'))
+        .replaceAll('ASSET_METER_NATIVE_PATCH_V5', 'ASSET_SIZE_NATIVE_PATCH_V4')
+        .replaceAll('assetMeter', 'assetSize')
+      await writeFile(path.join(root, file), legacy)
+      manifest.files[index]!.patchedHash = createHash('sha256').update(legacy).digest('hex')
+    }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    const status = await getNativePatchStatus(root)
+    assert.equal(status.backupDirectory, backupDirectory)
+    assert.equal(status.needsUpgrade, true)
+    assert.equal(status.installed, false)
+    assert.throws(() => patchExtensionHost(`${host}\n/* ASSET_SIZE_NATIVE_PATCH_V4 */`), /already contains/)
+    if (action === 'upgrade') {
+      assert.deepEqual(await installNativePatch(root), { changed: true, backupDirectory })
+      assert.equal((await getNativePatchStatus(root)).installed, true)
+      const workbench = await readFile(path.join(root, targetPaths[1]!), 'utf8')
+      assert.match(workbench, /ASSET_METER_NATIVE_PATCH_V5/)
+      assert.match(workbench, /--vscode-assetMeter-sizeCritical/)
+    }
+    assert.deepEqual(await Promise.all(targetPaths.map((_, index) => readFile(path.join(backupDirectory, `${index}.original`), 'utf8'))), originals)
+    assert.deepEqual(await restoreNativePatch(root), { changed: true, backupDirectory })
+    assert.deepEqual(await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8'))), originals)
+    assert.ok(!(await readdir(root)).includes('.asset-meter-native-patch'))
   }
   finally { await rm(root, { recursive: true, force: true }) }
 })
@@ -162,7 +200,7 @@ it('reapplying after a clean editor update archives the old backups', async () =
     await writeFile(path.join(root, targetPaths[1]!), renderer)
     await writeFile(path.join(root, targetPaths[2]!), 'body { color: yellow; }')
     await installNativePatch(root)
-    assert.ok((await readdir(root)).some(file => file.startsWith('.asset-size-native-patch.test-1.')))
+    assert.ok((await readdir(root)).some(file => file.startsWith('.asset-meter-native-patch.test-1.')))
     await restoreNativePatch(root)
     assert.equal(await readFile(path.join(root, targetPaths[2]!), 'utf8'), 'body { color: yellow; }')
   }

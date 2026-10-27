@@ -1,4 +1,4 @@
 {
-  "assetSize.displayMode": "always",
-  "assetSize.folderNames": ["assets", "images", "fonts"]
+  "assetMeter.displayMode": "always",
+  "assetMeter.include": ["**/*.{jpg,jpeg,png,gif,webp,avif,svg,ico,bmp,heic,mp4,webm,mov,mp3,wav,ogg,woff,woff2,ttf,otf,pdf,zip}", "**/{assets,images,fonts}"]
 }
