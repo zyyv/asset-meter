@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 
-const patchRevision = 5
+const patchRevision = 7
 const marker = `ASSET_METER_NATIVE_PATCH_V${patchRevision}`
 const hasPatch = (source: string) => /ASSET_(?:METER|SIZE)_NATIVE_PATCH_V\d+/.test(source)
 const backupName = '.asset-meter-native-patch'
@@ -21,12 +21,18 @@ export interface PatchResult { changed: boolean, backupDirectory: string }
 // Accept the previous numeric header while older extension hosts finish
 // reloading, but only emit invisible headers in the current extension.
 const nativeBadgePattern = String.raw`/^\u2063(\u2060{1,4}|[0-3])(\u2062)?((?:\d+ files? \u00b7 )?(?:\u2265 )?\d+(?:\.\d+)? (?:B|[KMGTPE]i?B))\u2063$/u`
-const badgeStyle = ' white-space: nowrap; width: auto; min-width: 0; max-width: none; flex: 0 0 auto; margin-left: 12px; margin-right: 12px; font-family: var(--vscode-font-family); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; opacity: 1;'
-const countStyle = ' margin-left: auto; padding-left: 12px; flex: 0 0 auto; white-space: nowrap; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground);'
+const badgeStyle = ' white-space: nowrap; width: auto; min-width: 0; max-width: none; flex: 0 0 auto; margin-right: 12px; font-family: var(--vscode-font-family); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; opacity: 1;'
+const countStyle = ' margin-left: auto; padding-left: 12px; flex: 0 0 auto; white-space: pre; font-family: var(--vscode-font-family); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground);'
+const assetTreeLabel = '.monaco-workbench .customview-tree .monaco-list[aria-label="Asset Meter"] .custom-view-tree-node-item-resourceLabel'
 const css = `\n/* ${marker} */
 .explorer-folders-view .explorer-item { min-width: 0; flex: 1 1 auto; }
 .explorer-folders-view .explorer-item > .monaco-icon-label-container { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; overflow: hidden; }
 .explorer-folders-view .explorer-item > .monaco-icon-label-container > .monaco-icon-name-container { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+${assetTreeLabel} { min-width: 0; }
+${assetTreeLabel} > .monaco-icon-label-container { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+${assetTreeLabel} > .monaco-icon-label-container > .monaco-icon-name-container { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+${assetTreeLabel} > .monaco-icon-label-container > .monaco-icon-description-container { margin-left: auto; padding-left: 12px; flex: 0 0 auto; white-space: nowrap; }
+${assetTreeLabel} .label-description { margin-left: 0; font-size: 11px; font-variant-numeric: tabular-nums; opacity: 1; }
 `
 const rendererHelper = `
 function __assetMeterNativeBadgeV5(value) {
@@ -43,7 +49,7 @@ function __assetMeterNativeBadgeV5(value) {
   return {
     hover: !!parsed[2],
     size: separator < 0 ? text : text.slice(separator + 3),
-    count: separator < 0 ? "" : text.slice(0, separator) + " ·",
+    count: separator < 0 ? "" : text.slice(0, separator) + " · ",
     color: ["var(--vscode-descriptionForeground)", "var(--vscode-assetMeter-sizeWarning)", "var(--vscode-assetMeter-sizeLarge)", "var(--vscode-assetMeter-sizeCritical)"][tone],
     other: fragments.filter(part => !pattern.test(part)).join(", ")
   };
@@ -83,7 +89,9 @@ export function patchWorkbench(source: string): string {
     // reveals the label, without leaving space for counts on other rows.
     const rowSelector = '.explorer-folders-view .monaco-list-row${__assetMeterData.hover ? ":hover" : ""}'
     const sizeSelector = '`' + `.monaco-workbench ${rowSelector} .monaco-icon-label.` + '${this.itemBadgeClassName}::after`'
-    const sizeContent = `\`content: "\${__assetMeterData.size}"; color: \${__assetMeterData.color} !important;${badgeStyle}\``
+    // Preserve the formatter's one-space separator across the two color spans.
+    // A standalone size still needs separation from the filename.
+    const sizeContent = `\`content: "\${__assetMeterData.size}"; color: \${__assetMeterData.color} !important; margin-left: \${__assetMeterData.count ? 0 : 12}px;${badgeStyle}\``
     const countSelector = '`' + `${rowSelector} .` + '${this.itemBadgeClassName} > .monaco-icon-label-container::after`'
     const countContent = `\`content: "\${__assetMeterData.count}";${countStyle}\``
     return `(()=>{const __assetMeterData=__assetMeterNativeBadgeV5(${value});if(!__assetMeterData){${ordinary};return;}${outside};${emit}(${sizeSelector},${sizeContent},${sheet});if(__assetMeterData.count){${emit}(${countSelector},${countContent},${sheet});}})()`

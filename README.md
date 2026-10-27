@@ -32,15 +32,23 @@ See file sizes and folder counts where you already work: VS Code's Explorer. Fin
     logo.svg                                 39 B
 ```
 
-> **Full inline labels require an optional native Explorer patch.** VS Code's standard decoration API limits badges to two characters. Without the patch, always mode shows rounded compact badges such as `2K` (no suffix means bytes), or `ⓘ` when the size needs more characters; hover for the exact size. The patch modifies three desktop program files, triggers VS Code's integrity warning and must be reapplied after editor updates. Read [Native Explorer patch](#native-explorer-patch) before enabling full inline labels.
+> **Full inline labels require an optional native Explorer patch.** VS Code's standard decoration API limits badges to two characters. Without the patch, always mode shows rounded compact badges such as `2K` (no suffix means bytes), or `ⓘ` when the size needs more characters; hover for the exact size. The patch modifies three VS Code program files, can trigger **“Your Code installation appears to be corrupt. Please reinstall.”**, and must be reapplied after editor updates. Read [Integrity warning and recovery](#integrity-warning-and-recovery) before enabling full inline labels.
 
 ## Quick start
 
 1. Install the `.vsix` from this project's [GitHub Releases](https://github.com/zyyv/asset-meter/releases), when available, using **Extensions → ⋯ → Install from VSIX…**. To build from source, see [Development](#development).
 2. Open a workspace containing an `assets`, `public`, `static`, `images`, `img`, `media` or `fonts` folder. Hover over matching files and folders to see their sizes.
-3. For full inline labels, run **Asset Meter: Install / Reapply Native Explorer Patch** from the Command Palette, then choose **Reload Window**.
+3. For full inline labels, first read [Integrity warning and recovery](#integrity-warning-and-recovery), then run **Asset Meter: Install / Reapply Native Explorer Patch** from the Command Palette and choose **Reload Window**. This step modifies VS Code program files.
 
 Run **Asset Meter: Open Settings** to customize matching rules. An empty folder displays `0 files · 0 B`. Set `assetMeter.include` to `["**/*"]` to decorate every file and folder.
+
+## Dedicated asset tree
+
+The **Asset Meter** view in Explorer shows files and folders selected by `assetMeter.include` / `assetMeter.exclude`, keeping their ancestor folders and hiding unrelated branches. It uses your file icon theme, lists folders first with natural name sorting, and groups multiple workspace folders under their own roots.
+
+Full sizes appear beside filenames, with file counts and totals beside folders; hover for exact bytes. Installing or updating the native Explorer patch aligns statistics at the right edge of each row, truncating long filenames first. Without the patch, full statistics still follow the filename. This view always shows descriptions, independently of `displayMode`. Units, precision and file count settings are shared with the original Explorer. Folder totals still include all files outside `exclude`, including files hidden from the filtered tree.
+
+Use **Refresh**, **Collapse All** and **Settings** in the view toolbar. Saves, creates, deletes, renames and rule changes refresh it automatically. Right-click a resource to reveal it in the original Explorer or diagnose matching; JPEG / PNG / WebP images also offer the existing compression workflow. An empty view links to matching settings.
 
 ## Compress images
 
@@ -155,11 +163,29 @@ out/vs/workbench/workbench.desktop.main.js
 out/vs/workbench/workbench.desktop.main.css
 ```
 
-Run **Asset Meter: Install / Reapply Native Explorer Patch**, then reload. This requires write permission to the application directory. Integrity checks and code signatures are not disabled; VS Code may report that the installation appears corrupt. Tooltips and compression remain available without the patch.
+Run **Asset Meter: Install / Reapply Native Explorer Patch**, then reload. This requires write permission to the application directory. Integrity checks and code signatures are not disabled. Tooltips and compression remain available without the patch.
 
 Unsupported editor code layouts are rejected before writing. The minimum API version does not guarantee patch compatibility with every VS Code release or derivative. Reapply after editor updates.
 
-**Before uninstalling**, run **Asset Meter: Restore Native Explorer Patch** and reload. Restoration checks program files and backups before writing, and refuses to overwrite files changed by an editor update or another tool. Original backups remain available. See [recovery commands](https://github.com/zyyv/asset-meter/blob/main/docs/PUBLISHING.md#native-patch-recovery) if the extension is already uninstalled.
+### Integrity warning and recovery
+
+> [!WARNING]
+> **Installing the native patch can trigger this VS Code integrity warning:**
+>
+> `Your Code installation appears to be corrupt. Please reinstall.`
+>
+> The patch changes the three program files listed above, so their checksums differ from the official values. VS Code detects these changes and may mark the installation as **Unsupported**. See the [official VS Code explanation](https://code.visualstudio.com/docs/supporting/faq#_installation-appears-to-be-corrupt-unsupported).
+>
+> **To resolve it, remove the patch and restore the original program files:**
+>
+> 1. Run **Asset Meter: Restore Native Explorer Patch** from the Command Palette.
+> 2. Choose **Reload Window**.
+>
+> **Restoring the originals disables the full inline sizes and file counts provided by the patch.** Hover tooltips and image compression remain available. If restoration is refused or the warning persists after reloading, reinstall VS Code following the official guidance linked above.
+>
+> **Restore the patch before uninstalling the extension; uninstalling alone does not restore program files.**
+
+Restoration verifies program files and backups before writing, and refuses to overwrite files changed by an editor update or another tool. Original backups remain available. See [recovery commands](https://github.com/zyyv/asset-meter/blob/main/docs/PUBLISHING.md#native-patch-recovery) if the extension is already uninstalled.
 
 ## Totals and compatibility
 
@@ -215,6 +241,8 @@ For desktop integration and UI checks, use a disposable VS Code installation:
 ```sh
 VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:integration
 VSCODE_EXECUTABLE_PATH="/path/to/patched/test/Code" pnpm test:ui
+VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:assets:ui
+ASSET_METER_EXPECT_RIGHT_ALIGNED=1 VSCODE_EXECUTABLE_PATH="/path/to/patched/test/Code" pnpm test:assets:ui
 VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 ```
 

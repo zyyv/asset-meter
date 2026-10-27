@@ -1,6 +1,8 @@
+import type { AssetTreeNode } from './assetTree'
 import type { CompressionPlugin } from './compression/plugins'
 import type { Metrics } from './core/types'
 import * as vscode from 'vscode'
+import { assetResource, AssetTreeProvider } from './assetTree'
 import { ImageCompression } from './compression/preview'
 import { SizeDecorationProvider } from './decorations'
 import { getNativePatchStatus, installNativePatch, restoreNativePatch } from './nativePatch'
@@ -19,6 +21,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   context.subscriptions.push(output)
   output.info(`Activating ${context.extension.id} ${context.extension.packageJSON.version}; VS Code ${vscode.version}`, JSON.stringify({ appRoot: vscode.env.appRoot, remoteName: vscode.env.remoteName }))
   const service = new SizeService(output)
+  const assetTree = new AssetTreeProvider(service, output)
+  const assetView = vscode.window.createTreeView('assetMeter.explorer', { treeDataProvider: assetTree, showCollapseAll: true })
   const refresh = (uris: readonly vscode.Uri[]) => {
     void service.refresh(uris).catch(error => output.error('Failed to refresh sizes.', error))
   }
@@ -77,9 +81,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   watchWorkspace()
   context.subscriptions.push(
     service,
+    assetTree,
+    assetView,
     decorations,
     compression,
-    vscode.commands.registerCommand('assetMeter.compressImage', (uri?: vscode.Uri) => compression.compress(uri)),
+    vscode.commands.registerCommand('assetMeter.compressImage', (resource?: vscode.Uri | AssetTreeNode) => compression.compress(assetResource(resource))),
+    vscode.commands.registerCommand('assetMeter.revealInExplorer', (resource?: vscode.Uri | AssetTreeNode) => {
+      const uri = assetResource(resource)
+      if (uri) { return vscode.commands.executeCommand('revealInExplorer', uri) }
+    }),
     vscode.window.registerFileDecorationProvider(decorations),
     new vscode.Disposable(() => { for (const watcher of watchers.values()) { watcher.dispose() } watchers.clear() }),
     vscode.workspace.onDidSaveTextDocument((document) => { queue(document.uri) }),
@@ -96,9 +106,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     vscode.workspace.onDidChangeWorkspaceFolders(() => { watchWorkspace(); service.invalidate(undefined, true) }),
     vscode.commands.registerCommand('assetMeter.refresh', () => { output.info('Manual size refresh requested.'); service.invalidate() }),
     vscode.commands.registerCommand('assetMeter.showOutput', () => { output.show(true) }),
-    vscode.commands.registerCommand('assetMeter.diagnose', async (resource?: vscode.Uri) => {
+    vscode.commands.registerCommand('assetMeter.diagnose', async (resource?: vscode.Uri | AssetTreeNode) => {
       output.show(true)
-      const uri = resource ?? vscode.window.activeTextEditor?.document.uri ?? (await vscode.window.showOpenDialog({
+      const uri = assetResource(resource) ?? vscode.window.activeTextEditor?.document.uri ?? (await vscode.window.showOpenDialog({
         title: 'Asset Meter: Select a file or folder to diagnose',
         canSelectFiles: true,
         canSelectFolders: true,
@@ -161,12 +171,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     }),
     new vscode.Disposable(() => { if (timer) { clearTimeout(timer) } pending.clear() }),
   )
-  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV5NoticeShown' : 'nativePatchV5NoticeShown'
+  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV7NoticeShown' : 'nativePatchV7NoticeShown'
   if (!nativePatchActive && !context.globalState.get(noticeKey, false)) {
     void context.globalState.update(noticeKey, true)
     void vscode.window.showInformationMessage(
       patchStatus.needsUpgrade
-        ? 'Update the native Explorer patch to show counts and sizes on row hover. Original backups will be preserved.'
+        ? 'Update the native Explorer patch to use consistent file count and size spacing in both asset trees. Original backups will be preserved.'
         : 'Full inline labels require a reversible VS Code patch. It triggers an integrity warning and must be reapplied after editor updates.',
       patchStatus.needsUpgrade ? 'Update Patch' : 'Install Patch',
     ).then((action) => { if (action) { void vscode.commands.executeCommand('assetMeter.installNativePatch') } })

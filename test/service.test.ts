@@ -2,6 +2,7 @@ import type { FileStat, Metrics } from '../src/core/types'
 import assert from 'node:assert/strict'
 import { beforeEach, it, vi } from 'vitest'
 import * as vscode from 'vscode'
+import { assetResource, AssetTreeProvider } from '../src/assetTree'
 import { SizeDecorationProvider } from '../src/decorations'
 import { SizeService } from '../src/service'
 
@@ -9,7 +10,9 @@ const state = vi.hoisted(() => ({
   entries: new Map<string, FileStat>(),
   config: {} as Record<string, unknown>,
   workspaceRoot: 'file:///workspace',
+  workspaceRoots: undefined as string[] | undefined,
   beforeStat: undefined as ((key: string) => Promise<void>) | undefined,
+  beforeRead: undefined as ((key: string) => Promise<void>) | undefined,
 }))
 
 vi.mock('vscode', async () => {
@@ -26,6 +29,10 @@ vi.mock('vscode', async () => {
     get scheme() { return this.url.protocol.slice(0, -1) }
     get authority() { return this.url.host }
     get path() { return decodeURIComponent(this.url.pathname) }
+    with(change: { scheme?: string }) {
+      return Uri.parse(change.scheme ? this.toString().replace(/^[^:]+:/, `${change.scheme}:`) : this.toString())
+    }
+
     toString() { return this.url.toString() }
   }
   class EventEmitter<T> {
@@ -41,11 +48,19 @@ vi.mock('vscode', async () => {
   return {
     Uri,
     EventEmitter,
+    TreeItem: class {
+      constructor(public label: string, public collapsibleState: number) {}
+    },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+    ThemeIcon: { File: { id: 'file' }, Folder: { id: 'folder' } },
     FileType: { File: 1, Directory: 2, SymbolicLink: 64 },
     workspace: {
+      get workspaceFolders() {
+        return (state.workspaceRoots ?? [state.workspaceRoot]).map((root, index) => ({ uri: Uri.parse(root), name: posix.basename(Uri.parse(root).path), index }))
+      },
       getWorkspaceFolder: (uri: Uri) => {
-        const root = Uri.parse(state.workspaceRoot)
-        return uri.toString() === root.toString() || uri.toString().startsWith(`${root}/`) ? { uri: root } : undefined
+        const root = (state.workspaceRoots ?? [state.workspaceRoot]).map(key => Uri.parse(key)).sort((a, b) => b.path.length - a.path.length).find(root => uri.toString() === root.toString() || uri.toString().startsWith(`${root}/`))
+        return root ? { uri: root } : undefined
       },
       getConfiguration: vi.fn(() => ({ get: (key: string, fallback: unknown) => state.config[key] ?? fallback })),
       fs: {
@@ -55,9 +70,12 @@ vi.mock('vscode', async () => {
           if (!entry) { throw Object.assign(new Error('Not found'), { code: 'FileNotFound' }) }
           return { ...entry }
         }),
-        readDirectory: vi.fn(async (uri: Uri) => [...state.entries]
-          .filter(([key]) => key !== uri.toString() && posix.dirname(Uri.parse(key).path) === uri.path)
-          .map(([key, stat]) => [posix.basename(Uri.parse(key).path), stat.type])),
+        readDirectory: vi.fn(async (uri: Uri) => {
+          await state.beforeRead?.(uri.toString())
+          return [...state.entries]
+            .filter(([key]) => key !== uri.toString() && key.startsWith(`${uri.toString().replace(/\/$/, '')}/`) && posix.dirname(Uri.parse(key).path) === uri.path)
+            .map(([key, stat]) => [posix.basename(Uri.parse(key).path), stat.type])
+        }),
       },
     },
   }
@@ -70,6 +88,8 @@ const token = { isCancellationRequested: false } as vscode.CancellationToken
 beforeEach(() => {
   vi.clearAllMocks()
   state.beforeStat = undefined
+  state.beforeRead = undefined
+  state.workspaceRoots = undefined
   state.workspaceRoot = 'file:///workspace'
   state.config = { include: ['**/*.png', '**/assets'], exclude: ['**/node_modules/**'] }
   state.entries.clear()
@@ -389,4 +409,167 @@ it('disposing during refresh cancels work without sending a late decoration noti
   await refresh
   await service.refresh([logo])
   assert.equal(notify.mock.calls.length, 0)
+})
+
+it('asset tree keeps matched resources and their ancestors, and prunes unrelated, excluded and symlink branches', async () => {
+  state.config.include = ['**/*.png', '**/empty']
+  for (const [path, type] of [
+    ['assets/nested', 2],
+    ['assets/nested/photo2.png', 1],
+    ['assets/nested/photo10.png', 1],
+    ['assets/notes.txt', 1],
+    ['empty', 2],
+    ['docs', 2],
+    ['docs/readme.txt', 1],
+    ['node_modules', 2],
+    ['node_modules/hidden.png', 1],
+    ['loop', 66],
+  ] as const) { state.entries.set(`file:///workspace/${path}`, { type, size: 5 }) }
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  try {
+    const roots = await tree.getChildren()
+    assert.deepEqual(roots.map(node => node.name), ['assets', 'empty'])
+    const children = await tree.getChildren(roots[0])
+    assert.deepEqual(children.map(node => node.name), ['nested', 'logo.png'])
+    assert.deepEqual((await tree.getChildren(children[0])).map(node => node.name), ['photo2.png', 'photo10.png'])
+    assert.equal((await tree.getTreeItem(roots[1]!)).collapsibleState, vscode.TreeItemCollapsibleState.None)
+    const reads = vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.map(([uri]) => uri.path)
+    assert.ok(!reads.some(path => path.includes('node_modules') || path.includes('loop')))
+    const count = reads.length
+    await tree.getChildren()
+    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.length, count, 'reopening cached branches does not rescan')
+  }
+  finally { tree.dispose(); service.dispose() }
+})
+
+it('asset tree shows the same full metrics, preserves theme icons and opens actual resources without a duplicate badge', async () => {
+  state.entries.set(vscode.Uri.joinPath(assets, 'notes.txt').toString(), { type: 1, size: 5 })
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    const [folder] = await tree.getChildren()
+    const folderItem = await tree.getTreeItem(folder!)
+    assert.equal(folderItem.description, '2 files · 15 B', 'folder totals retain files hidden by include, as in Explorer')
+    assert.equal(folderItem.iconPath, vscode.ThemeIcon.Folder)
+    const [file] = await tree.getChildren(folder)
+    const item = await tree.getTreeItem(file!)
+    assert.equal(item.description, '10 B')
+    assert.equal(item.iconPath, vscode.ThemeIcon.File)
+    assert.equal(item.contextValue, 'assetMeter.image')
+    assert.equal(item.command?.command, 'vscode.open')
+    assert.deepEqual(item.command?.arguments, [logo])
+    assert.equal(assetResource(file)?.toString(), logo.toString())
+    assert.equal(assetResource(logo), logo)
+    assert.equal(assetResource(), undefined)
+    assert.equal(await decorations.provideFileDecoration(item.resourceUri!, token), undefined)
+    assert.match(String(item.tooltip), /Size: 10 B/)
+    state.config.fileCountMode = 'direct'
+    state.config.showFileCount = false
+    state.config.units = 'binary'
+    state.config.displayMode = 'hover'
+    service.invalidate(undefined, true)
+    assert.equal((await tree.getTreeItem(folder!)).description, '15 B', 'panel keeps full descriptions in hover mode too')
+  }
+  finally { decorations.dispose(); tree.dispose(); service.dispose() }
+})
+
+it('asset tree updates added, deleted and renamed branches while retaining unrelated directory caches', async () => {
+  state.config.include = ['**/*.png']
+  state.entries.set('file:///workspace/other', { type: 2, size: 0 })
+  state.entries.set('file:///workspace/other/other.png', { type: 1, size: 1 })
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  const notify = vi.fn()
+  tree.onDidChangeTreeData(notify)
+  try {
+    const [folder] = await tree.getChildren()
+    const added = vscode.Uri.joinPath(assets, 'added.png')
+    state.entries.set(added.toString(), { type: 1, size: 20 })
+    await service.refresh([added])
+    assert.deepEqual((await tree.getChildren(folder)).map(node => node.name), ['added.png', 'logo.png'])
+    state.entries.delete(logo.toString())
+    await service.refresh([logo])
+    assert.deepEqual((await tree.getChildren(folder)).map(node => node.name), ['added.png'])
+    const renamed = vscode.Uri.joinPath(assets, 'added.txt')
+    state.entries.delete(added.toString())
+    state.entries.set(renamed.toString(), { type: 1, size: 20 })
+    await service.refresh([added, renamed])
+    assert.deepEqual((await tree.getChildren()).map(node => node.name), ['other'], 'the last matched file disappearing prunes its ancestors')
+    assert.equal(notify.mock.calls.length, 3)
+    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.filter(([uri]) => uri.path.endsWith('/other')).length, 1)
+    service.invalidate()
+    await tree.getChildren()
+    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.filter(([uri]) => uri.path.endsWith('/other')).length, 2, 'manual refresh clears all branches')
+  }
+  finally { tree.dispose(); service.dispose() }
+})
+
+it('asset tree responds to changed rules, disabled extension and empty workspaces', async () => {
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  try {
+    assert.equal((await tree.getChildren()).length, 1)
+    state.config.include = ['**/*.jpg']
+    service.invalidate(undefined, true)
+    assert.deepEqual(await tree.getChildren(), [])
+    state.config.include = ['**/*']
+    state.config.enabled = false
+    service.invalidate(undefined, true)
+    vi.mocked(vscode.workspace.fs.readDirectory).mockClear()
+    assert.deepEqual(await tree.getChildren(), [])
+    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.length, 0)
+    state.workspaceRoots = []
+    assert.deepEqual(await tree.getChildren(), [])
+  }
+  finally { tree.dispose(); service.dispose() }
+})
+
+it('asset tree separates workspace roots and supports virtual filesystem providers', async () => {
+  state.workspaceRoots = ['file:///workspace', 'memfs://remote/project']
+  const remote = 'memfs://remote/project/banner.png'
+  state.entries.set(remote, { type: 1, size: 42 })
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  try {
+    const roots = await tree.getChildren()
+    assert.deepEqual(roots.map(node => node.name), ['workspace', 'project'])
+    assert.equal((await tree.getTreeItem(roots[1]!)).collapsibleState, vscode.TreeItemCollapsibleState.Expanded)
+    const [file] = await tree.getChildren(roots[1])
+    assert.equal(file?.uri.toString(), remote)
+    assert.equal((await tree.getTreeItem(file!)).description, '42 B')
+  }
+  finally { tree.dispose(); service.dispose() }
+})
+
+it('asset tree discards invalidated pending reads and retries unreadable branches on refresh', async () => {
+  const service = new SizeService()
+  const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+  const tree = new AssetTreeProvider(service, log)
+  let release: () => void = () => {}
+  let started: () => void = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const entered = new Promise<void>((resolve) => { started = resolve })
+  state.beforeRead = async () => { started(); await gate }
+  try {
+    const pending = tree.getChildren()
+    await entered
+    state.config.include = []
+    service.invalidate(undefined, true)
+    release()
+    assert.deepEqual(await pending, [])
+    assert.equal(log.warn.mock.calls.length, 0, 'invalidated reads do not log filesystem failures')
+    state.config.include = ['**/*.png']
+    service.invalidate(undefined, true)
+    state.beforeRead = async () => { throw new Error('Permission denied') }
+    assert.deepEqual(await tree.getChildren(), [])
+    assert.ok(log.warn.mock.calls.length)
+    state.beforeRead = undefined
+    service.invalidate()
+    assert.equal((await tree.getChildren()).length, 1)
+    tree.dispose()
+    assert.deepEqual(await tree.getChildren(), [])
+  }
+  finally { tree.dispose(); service.dispose() }
 })

@@ -32,15 +32,23 @@
     logo.svg                                 39 B
 ```
 
-> **完整行内标签需要可选的原生 Explorer 补丁。** VS Code 标准装饰 API 的徽标最多支持两个字符。不安装补丁时，常驻模式显示短徽标（如 `2K`，为取整后的近似大小；无后缀表示字节），超出两字符时显示 `ⓘ`；悬停可查看精确大小。补丁会修改三个桌面程序文件，触发 VS Code 完整性警告，并需要在编辑器更新后重新应用。启用前请阅读[原生 Explorer 补丁](#原生-explorer-补丁)。
+> **完整行内标签需要可选的原生 Explorer 补丁。** VS Code 标准装饰 API 的徽标最多支持两个字符。不安装补丁时，常驻模式显示短徽标（如 `2K`，为取整后的近似大小；无后缀表示字节），超出两字符时显示 `ⓘ`；悬停可查看精确大小。补丁会修改三个 VS Code 程序文件，可能触发 **“Your Code installation appears to be corrupt. Please reinstall.”** 完整性警告，并需要在编辑器更新后重新应用。启用前请阅读[完整性警告与恢复](#完整性警告与恢复)。
 
 ## 快速开始
 
 1. 如果仓库已提供发布包，从 [GitHub Releases](https://github.com/zyyv/asset-meter/releases) 下载 `.vsix`，在 **扩展 → ⋯ → 从 VSIX 安装…** 中选择它。也可以按[本地开发](#本地开发)的说明自行打包。
 2. 打开包含 `assets`、`public`、`static`、`images`、`img`、`media` 或 `fonts` 文件夹的工作区，悬停在匹配的文件或文件夹上查看体积。
-3. 需要完整行内标签时，在命令面板执行 **Asset Meter: Install / Reapply Native Explorer Patch**，然后点击 **Reload Window**。
+3. 需要完整行内标签时，先阅读[完整性警告与恢复](#完整性警告与恢复)，再在命令面板执行 **Asset Meter: Install / Reapply Native Explorer Patch**，然后点击 **Reload Window**。这一步会修改 VS Code 程序文件。
 
 运行 **Asset Meter: Open Settings** 修改匹配规则。空文件夹显示 `0 files · 0 B`。将 `assetMeter.include` 设置为 `["**/*"]`，即可显示所有文件和文件夹的装饰。
+
+## 专属资源树
+
+Explorer 中的 **Asset Meter** 面板按 `assetMeter.include` / `assetMeter.exclude` 显示命中的文件和目录，并保留通往命中项的父目录，隐藏无关分支。文件图标跟随当前文件图标主题，目录优先、名称自然排序；多工作区分别显示各自根目录。
+
+名称右侧常驻显示完整体积，目录显示文件数和总大小；悬停可查看精确字节数。安装或更新原生 Explorer 补丁后，统计统一靠整行最右侧对齐，长文件名优先截断；未安装时仍在文件名后面显示完整统计。面板统计不受 `displayMode` 影响。单位、精度和文件数量设置与原 Explorer 共用，目录总量仍统计所有未被 `exclude` 排除的文件，因此可能包含树中隐藏的文件。
+
+面板工具栏提供 **刷新、全部折叠、设置**。文件保存、创建、删除、重命名和规则变更会自动刷新。右键资源可在原 Explorer 中定位、诊断匹配规则，JPEG / PNG / WebP 还可直接进入现有压缩流程。没有匹配项时提供设置入口。
 
 ## 图片压缩
 
@@ -157,11 +165,29 @@ out/vs/workbench/workbench.desktop.main.js
 out/vs/workbench/workbench.desktop.main.css
 ```
 
-执行 **Asset Meter: Install / Reapply Native Explorer Patch** 后重载窗口，需要拥有桌面应用程序目录的写入权限。补丁不会禁用完整性校验或代码签名检查，VS Code 可能提示安装已损坏。不安装补丁也可以使用悬停提示和图片压缩。
+执行 **Asset Meter: Install / Reapply Native Explorer Patch** 后重载窗口，需要拥有桌面应用程序目录的写入权限。补丁不会禁用完整性校验或代码签名检查。不安装补丁也可以使用悬停提示和图片压缩。
 
 写入前会校验编辑器代码结构；不支持的结构会被拒绝。最低 API 版本不代表补丁兼容每个 VS Code 版本或衍生编辑器。编辑器更新后需要重新应用。
 
-**卸载扩展前**，执行 **Asset Meter: Restore Native Explorer Patch** 并重载。恢复前会验证程序文件和备份，拒绝覆盖已被编辑器更新或其他工具改动的文件。恢复后仍保留原始备份。如果扩展已被卸载，请使用[恢复命令](https://github.com/zyyv/asset-meter/blob/main/docs/PUBLISHING.md#native-patch-recovery)。
+### 完整性警告与恢复
+
+> [!WARNING]
+> **安装原生补丁后，VS Code 可能显示完整性警告：**
+>
+> `Your Code installation appears to be corrupt. Please reinstall.`
+>
+> 补丁修改上述三个程序文件，使其校验值与官方记录不一致，因此可能触发该警告，并将安装标记为 **Unsupported**。参见 [VS Code 官方说明](https://code.visualstudio.com/docs/supporting/faq#_installation-appears-to-be-corrupt-unsupported)。
+>
+> **解决方式：撤回补丁，恢复原始程序文件。**
+>
+> 1. 在命令面板执行 **Asset Meter: Restore Native Explorer Patch**。
+> 2. 点击 **Reload Window** 重载窗口。
+>
+> **恢复后，依赖补丁的完整行内大小和文件数量显示会停止工作**；悬停提示和图片压缩仍可使用。如果恢复被拒绝或重载后仍出现警告，请按上述官方说明重新安装 VS Code。
+>
+> **卸载扩展前应先恢复补丁；单独卸载扩展不会恢复程序文件。**
+
+恢复前会验证程序文件和备份，拒绝覆盖已被编辑器更新或其他工具改动的文件。恢复后仍保留原始备份。如果扩展已被卸载，请使用[恢复命令](https://github.com/zyyv/asset-meter/blob/main/docs/PUBLISHING.md#native-patch-recovery)。
 
 ## 统计规则与兼容性
 
@@ -217,6 +243,8 @@ pnpm package
 ```sh
 VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:integration
 VSCODE_EXECUTABLE_PATH="/path/to/patched/test/Code" pnpm test:ui
+VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:assets:ui
+ASSET_METER_EXPECT_RIGHT_ALIGNED=1 VSCODE_EXECUTABLE_PATH="/path/to/patched/test/Code" pnpm test:assets:ui
 VSCODE_EXECUTABLE_PATH="/path/to/test/Code" pnpm test:compression:ui
 ```
 

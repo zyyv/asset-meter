@@ -55,7 +55,34 @@
     }
   },
   "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "assetMeter.explorer",
+          "name": "Asset Meter",
+          "icon": "$(files)",
+          "contextualTitle": "Asset Meter"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "assetMeter.explorer",
+        "contents": "Open a folder to browse matching assets.\n[Open Folder](command:vscode.openFolder)",
+        "when": "workspaceFolderCount == 0"
+      },
+      {
+        "view": "assetMeter.explorer",
+        "contents": "No matching files or folders. Check that Asset Meter is enabled and adjust your include / exclude rules.\n[Open Asset Meter Settings](command:assetMeter.openSettings)",
+        "when": "workspaceFolderCount != 0"
+      }
+    ],
     "commands": [
+      {
+        "command": "assetMeter.revealInExplorer",
+        "title": "Asset Meter: Reveal in Explorer",
+        "icon": "$(go-to-file)"
+      },
       {
         "command": "assetMeter.refresh",
         "title": "Asset Meter: Refresh Sizes",
@@ -95,6 +122,41 @@
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "assetMeter.refresh",
+          "when": "view == assetMeter.explorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "assetMeter.openSettings",
+          "when": "view == assetMeter.explorer",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "assetMeter.revealInExplorer",
+          "when": "view == assetMeter.explorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "assetMeter.compressImage",
+          "when": "view == assetMeter.explorer && viewItem == assetMeter.image",
+          "group": "assetMeter@1"
+        },
+        {
+          "command": "assetMeter.diagnose",
+          "when": "view == assetMeter.explorer",
+          "group": "assetMeter@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "assetMeter.revealInExplorer",
+          "when": "false"
+        }
+      ],
       "explorer/context": [
         {
           "command": "assetMeter.refresh",
@@ -331,6 +393,7 @@
     "test": "pnpm build && vitest run",
     "test:integration": "pnpm build && node scripts/run-integration.mjs",
     "test:ui": "node scripts/check-native-view.mjs",
+    "test:assets:ui": "pnpm build && node scripts/check-asset-tree-view.mjs",
     "test:compression:ui": "pnpm build && node scripts/check-compression-view.mjs",
     "vscode:prepublish": "pnpm typecheck && pnpm build",
     "package": "vsce package --no-dependencies --githubBranch main",

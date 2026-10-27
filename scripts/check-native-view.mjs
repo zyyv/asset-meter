@@ -73,7 +73,7 @@ try {
     return container && getComputedStyle(container, '::after').content.includes('3 files')
   }))
   assert.match(await asset.evaluate(element => getComputedStyle(element, '::after').content), /7\.9 MB/)
-  assert.equal(await page.locator('[id="assetMeter.explorer"]').count(), 0, 'No Asset Meter panel')
+  assert.equal(await page.locator('.pane-header').filter({ hasText: /^Asset Meter$/i }).count(), 1, 'Asset Meter has a dedicated Explorer panel')
   const assetRow = asset.locator('xpath=ancestor::*[contains(@class,"monaco-list-row")][1]')
   await assetRow.locator('.monaco-tl-twistie').click()
   const images = page.locator('.explorer-folders-view .explorer-item').filter({ hasText: /^images$/ }).first()
@@ -137,7 +137,7 @@ try {
   await waitFor(() => asset.evaluate(element => getComputedStyle(element.querySelector('.monaco-icon-label-container'), '::after').content.includes('3 files')))
   await waitFor(() => hero.evaluate(element => getComputedStyle(element, '::after').content.includes('6.3 MB')))
   assert.doesNotMatch(log, /The 'badge'-property must be undefined|Error from file decoration provider/)
-  console.log('Native Explorer UI passed: full size, file count, red severity, expansion, labels on row hover, mouse leave, live mode switching, no extra panel.')
+  console.log('Native Explorer UI passed: full size, file count, red severity, expansion, labels on row hover, mouse leave, live mode switching, dedicated asset panel.')
 }
 finally {
   if (browser) { await browser.close() }

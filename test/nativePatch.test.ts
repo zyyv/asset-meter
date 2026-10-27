@@ -48,10 +48,10 @@ it('renderer scopes sizes to Explorer, keeps counts neutral, and preserves ordin
   assert.match(emitted[2]![1], /var\(--vscode-assetMeter-sizeCritical\)/)
   assert.match(emitted[3]![1], /content: "M"/)
   assert.equal(emitted[5]![0], '.explorer-folders-view .monaco-list-row .example > .monaco-icon-label-container::after')
-  assert.match(emitted[5]![1], /content: "24 files ·"/)
+  assert.match(emitted[5]![1], /content: "24 files · "/)
   assert.match(emitted[5]![1], /var\(--vscode-descriptionForeground\)/)
   assert.match(emitted[7]![1], /content: "0 B"/)
-  assert.match(emitted[8]![1], /content: "0 files ·"/)
+  assert.match(emitted[8]![1], /content: "0 files · "/)
   assert.doesNotMatch(emitted[8]![1], /00 files/)
 })
 
@@ -69,12 +69,37 @@ it('hover labels reveal counts and sizes only on the hovered Explorer row and pr
   assert.match(emitted[1]![1], /content: "1.2 MB"/)
   assert.match(emitted[1]![1], /var\(--vscode-assetMeter-sizeCritical\)/)
   assert.equal(emitted[2]![0], '.explorer-folders-view .monaco-list-row:hover .example > .monaco-icon-label-container::after')
-  assert.match(emitted[2]![1], /content: "24 files ·"/)
+  assert.match(emitted[2]![1], /content: "24 files · "/)
   assert.match(emitted[2]![1], /var\(--vscode-descriptionForeground\)/)
   assert.deepEqual(emitted[3], ['.example::after', 'content: ""; color: red;'])
   assert.match(emitted[4]![0], /\.monaco-list-row:hover /)
   assert.match(emitted[4]![1], /content: "0 B"/)
   assert.equal(emitted.length, 5, 'Files do not emit a count label')
+})
+
+it.each(['3 files · 603 B', '1 file · 240 B', '0 files · 0 B', '24 files · ≥ 1.5 MiB'])('split Explorer labels preserve the exact spacing of "%s"', (label) => {
+  const emitted: [string, string][] = []
+  const context: Record<string, unknown> = { emit: (selector: string, content: string) => emitted.push([selector, content]), color: () => 'red' }
+  runInNewContext(patchWorkbench(renderer), context)
+  const one = context.one as (letter: string, color: string) => void
+  one.call({ itemBadgeClassName: 'example' }, `\u2063\u2060${label}\u2063`, 'red')
+  const size = emitted[1]![1]
+  const count = emitted[2]![1]
+  const text = (content: string) => /content: "([^"]*)"/.exec(content)?.[1]
+  assert.equal(`${text(count)}${text(size)}`, label, 'count and size together match Asset Meter’s single text description')
+  assert.match(size, /margin-left: 0px;/, 'no extra pixels are inserted after the separator')
+  assert.match(count, /white-space: pre;/, 'the single trailing space is preserved across the two spans')
+})
+
+it('standalone file sizes keep their gap from the filename without adding a separator', () => {
+  const emitted: [string, string][] = []
+  const context: Record<string, unknown> = { emit: (selector: string, content: string) => emitted.push([selector, content]), color: () => 'red' }
+  runInNewContext(patchWorkbench(renderer), context)
+  const one = context.one as (letter: string, color: string) => void
+  one.call({ itemBadgeClassName: 'example' }, '\u2063\u2060603 B\u2063', 'red')
+  assert.equal(emitted.length, 2)
+  assert.match(emitted[1]![1], /content: "603 B";/)
+  assert.match(emitted[1]![1], /margin-left: 12px;/)
 })
 
 async function fixture(): Promise<string> {
@@ -124,7 +149,7 @@ it('upgrading a previous patch adds row hover support and retains the original b
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { revision: number, files: { patchedHash: string }[] }
     manifest.revision = 3
     for (const [index, file] of targetPaths.entries()) {
-      const older = (await readFile(path.join(root, file), 'utf8')).replaceAll('ASSET_METER_NATIVE_PATCH_V5', 'ASSET_METER_NATIVE_PATCH_V3')
+      const older = (await readFile(path.join(root, file), 'utf8')).replaceAll('ASSET_METER_NATIVE_PATCH_V7', 'ASSET_METER_NATIVE_PATCH_V3')
       await writeFile(path.join(root, file), older)
       manifest.files[index]!.patchedHash = createHash('sha256').update(older).digest('hex')
     }
@@ -134,6 +159,45 @@ it('upgrading a previous patch adds row hover support and retains the original b
     assert.equal((await getNativePatchStatus(root)).installed, true)
     assert.match(await readFile(path.join(root, targetPaths[1]!), 'utf8'), /:hover/)
     assert.ok(!(await readdir(root)).some(file => file.startsWith('.asset-meter-native-patch.')))
+    await restoreNativePatch(root)
+    assert.deepEqual(await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8'))), originals)
+  }
+  finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it.each([5, 6])('upgrading V%s keeps dedicated tree statistics right-aligned and restoration reversible', async (revision) => {
+  const root = await fixture()
+  try {
+    const originals = await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8')))
+    await installNativePatch(root)
+    const manifestPath = path.join(root, '.asset-meter-native-patch', 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { revision: number, files: { patchedHash: string, originalHash: string }[] }
+    const originalHashes = manifest.files.map(file => file.originalHash)
+    manifest.revision = revision
+    for (const [index, file] of targetPaths.entries()) {
+      const previous = (await readFile(path.join(root, file), 'utf8'))
+        .replaceAll('ASSET_METER_NATIVE_PATCH_V7', `ASSET_METER_NATIVE_PATCH_V${revision}`)
+        .split('\n')
+        .filter(line => revision !== 5 || !line.startsWith('.monaco-workbench .customview-tree'))
+        .join('\n')
+      await writeFile(path.join(root, file), previous)
+      manifest.files[index]!.patchedHash = createHash('sha256').update(previous).digest('hex')
+    }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    assert.equal((await getNativePatchStatus(root)).needsUpgrade, true)
+    await installNativePatch(root)
+    const stylesheet = await readFile(path.join(root, targetPaths[2]!), 'utf8')
+    assert.ok(stylesheet.startsWith(originals[2]!))
+    const treeRules = stylesheet.split('\n').filter(line => line.startsWith('.monaco-workbench .customview-tree'))
+    assert.ok(treeRules.length)
+    assert.ok(treeRules.every(rule => rule.includes('.monaco-list[aria-label="Asset Meter"]')), 'alignment does not affect other custom trees')
+    assert.ok(treeRules.some(rule => rule.includes('.monaco-icon-label-container { display: flex;')))
+    assert.ok(treeRules.some(rule => rule.includes('.monaco-icon-description-container { margin-left: auto;') && rule.includes('flex: 0 0 auto;')))
+    assert.ok(treeRules.some(rule => rule.includes('.monaco-icon-name-container { min-width: 0; overflow: hidden; text-overflow: ellipsis;')))
+    const upgraded = JSON.parse(await readFile(manifestPath, 'utf8')) as typeof manifest
+    assert.equal(upgraded.revision, 7)
+    assert.deepEqual(upgraded.files.map(file => file.originalHash), originalHashes)
+    assert.equal((await getNativePatchStatus(root)).installed, true)
     await restoreNativePatch(root)
     assert.deepEqual(await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8'))), originals)
   }
@@ -152,7 +216,7 @@ it.each(['restore', 'upgrade'] as const)('renamed extension can %s a legacy Asse
     manifest.revision = 4
     for (const [index, file] of targetPaths.entries()) {
       const legacy = (await readFile(path.join(root, file), 'utf8'))
-        .replaceAll('ASSET_METER_NATIVE_PATCH_V5', 'ASSET_SIZE_NATIVE_PATCH_V4')
+        .replaceAll('ASSET_METER_NATIVE_PATCH_V7', 'ASSET_SIZE_NATIVE_PATCH_V4')
         .replaceAll('assetMeter', 'assetSize')
       await writeFile(path.join(root, file), legacy)
       manifest.files[index]!.patchedHash = createHash('sha256').update(legacy).digest('hex')
@@ -167,7 +231,7 @@ it.each(['restore', 'upgrade'] as const)('renamed extension can %s a legacy Asse
       assert.deepEqual(await installNativePatch(root), { changed: true, backupDirectory })
       assert.equal((await getNativePatchStatus(root)).installed, true)
       const workbench = await readFile(path.join(root, targetPaths[1]!), 'utf8')
-      assert.match(workbench, /ASSET_METER_NATIVE_PATCH_V5/)
+      assert.match(workbench, /ASSET_METER_NATIVE_PATCH_V7/)
       assert.match(workbench, /--vscode-assetMeter-sizeCritical/)
     }
     assert.deepEqual(await Promise.all(targetPaths.map((_, index) => readFile(path.join(backupDirectory, `${index}.original`), 'utf8'))), originals)
