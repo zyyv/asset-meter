@@ -32,7 +32,7 @@
     logo.svg                                 39 B
 ```
 
-> **完整行内标签需要可选的原生 Explorer 补丁。** VS Code 标准装饰 API 的徽标最多支持两个字符。补丁会修改三个桌面程序文件，触发 VS Code 完整性警告，并需要在编辑器更新后重新应用。不安装补丁也可以使用悬停提示和图片压缩。启用前请阅读[原生 Explorer 补丁](#原生-explorer-补丁)。
+> **完整行内标签需要可选的原生 Explorer 补丁。** VS Code 标准装饰 API 的徽标最多支持两个字符。不安装补丁时，常驻模式显示短徽标（如 `2K`，为取整后的近似大小；无后缀表示字节），超出两字符时显示 `ⓘ`；悬停可查看精确大小。补丁会修改三个桌面程序文件，触发 VS Code 完整性警告，并需要在编辑器更新后重新应用。启用前请阅读[原生 Explorer 补丁](#原生-explorer-补丁)。
 
 ## 快速开始
 
@@ -91,7 +91,7 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
 | `assetMeter.enabled` | `true` | 启用体积计算和装饰。 |
-| `assetMeter.displayMode` | `"always"` | 常驻显示右侧标签；`"hover"` 仅在鼠标移到该文件或目录行时显示右侧数量和大小。两种行内显示均需补丁；未安装时仍可查看悬停提示。 |
+| `assetMeter.displayMode` | `"always"` | 常驻显示右侧标签；未安装补丁时显示短徽标或 `ⓘ`。`"hover"` 仅在鼠标移到该行时显示完整数量和大小，需补丁；未安装时仍可查看悬停提示。 |
 | `assetMeter.include` | 常见资源格式和目录 | 选择文件和文件夹的工作区相对 glob，支持 `**`、`*`、花括号、extglob 和否定模式；`"**/*"` 匹配全部资源，`[]` 关闭装饰。不限制目录总量。 |
 | `assetMeter.exclude` | 版本控制、依赖、`.DS_Store` | 工作区相对 glob；匹配资源及其后代不会显示装饰，也不计入总量。 |
 | `assetMeter.showFileCount` | `true` | 在文件夹大小之前显示文件数量。 |
@@ -133,9 +133,19 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 | **Asset Meter: Refresh Sizes** | 重新计算文件大小和文件夹总量。 |
 | **Asset Meter: Toggle Always / Hover** | 切换右侧标签的常驻显示和悬停显示。 |
 | **Asset Meter: Open Settings** | 打开本扩展的设置。 |
+| **Asset Meter: Show Logs** | 打开 Output 面板中的 Asset Meter 日志。 |
+| **Asset Meter: Diagnose File Matching** | 诊断当前文件或右键选择的资源，输出匹配原因、有效配置、大小和补丁状态。 |
 | **Asset Meter: Compress Image** | 压缩所选图片并打开对比。 |
 | **Asset Meter: Install / Reapply Native Explorer Patch** | 安装、升级或重新应用可选补丁。 |
 | **Asset Meter: Restore Native Explorer Patch** | 恢复桌面程序原始文件。 |
+
+## 日志与匹配诊断
+
+运行 **Asset Meter: Show Logs**，或在 **查看 → 输出** 中选择 **Asset Meter**。默认记录启动版本、工作区、有效匹配配置、补丁状态、手动刷新以及文件系统错误。不会记录文件内容或 TinyPNG API Key。
+
+某个文件没有显示时，在 Explorer 中右键它，选择 **Asset Meter: Diagnose File Matching**。也可以在命令面板执行此命令，诊断当前文本编辑器中的文件；没有活动文本文件时会让你选择文件或目录。日志会说明是否在工作区、是否被禁用或排除、是否匹配 include、是否为符号链接，并在可计算时输出字节数和文件数量。未装补丁、等待重载或关闭 `explorer.decorations.badges` 也会明确记录。
+
+需要查看逐文件自动处理过程时，运行 **Developer: Set Log Level...**，选择 **Asset Meter → Debug**，再运行 **Asset Meter: Refresh Sizes**。Debug 日志包含匹配结果、测量结果、刷新路径和最终徽标；正常使用时恢复 Info，避免大量逐文件日志。
 
 ## 原生 Explorer 补丁
 
@@ -161,8 +171,8 @@ out/vs/workbench/workbench.desktop.main.css
 
 | 情况 | 检查方式 |
 | --- | --- |
-| 只有悬停提示，没有行内大小 | 安装或重新应用补丁并重载，启用 `explorer.decorations.badges`；`"hover"` 模式需要将鼠标移到对应文件或目录行。 |
-| 某项没有显示 | 检查匹配规则、排除规则、`assetMeter.enabled`，以及是否为符号链接。 |
+| 只有短徽标、`ⓘ` 或悬停提示，没有完整行内大小 | 安装或重新应用补丁并重载，启用 `explorer.decorations.badges`；`"hover"` 模式需要将鼠标移到对应文件或目录行。 |
+| 某项没有显示 | 右键该项运行 **Asset Meter: Diagnose File Matching**，在 **Output → Asset Meter** 查看原因。 |
 | Remote SSH、WSL、Dev Containers | 统计在工作区扩展宿主运行；完整行内标签需要访问本地桌面程序文件，不能假定远程会话支持补丁。 |
 | 虚拟工作区 | 统计取决于文件系统提供者是否支持文件属性、目录枚举和变更监听。 |
 | 浏览器或 vscode.dev | 不支持；扩展需要 Node.js 扩展宿主及 WebAssembly worker。 |

@@ -8,6 +8,12 @@ export function formatSize(bytes: number, units: Settings['units'] = 'binary', p
   return `${Number(value.toFixed(index === 0 ? 0 : places))} ${names[index]}`
 }
 
+export function compactSizeBadge(bytes: number, units: Settings['units']): string {
+  const compact = formatSize(bytes, units, 0).replace(/ (?:([KMGTPE])i?B|B)$/, '$1')
+  // VS Code accepts at most two characters. Keep the exact size in the tooltip.
+  return compact.length <= 2 ? compact : 'ⓘ'
+}
+
 // An invisible delimiter identifies labels accepted by the reversible native patch.
 // Unpatched hosts never receive these long badges.
 export const nativeLabelMarker = '\u2063'

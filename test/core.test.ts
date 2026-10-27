@@ -2,7 +2,7 @@ import type { FileStat, FileSystem, Settings } from '../src/core/types'
 import assert from 'node:assert/strict'
 import { posix } from 'node:path'
 import { it } from 'vitest'
-import { describeMetrics, fileCount, formatSize, inlineLabel } from '../src/core/format'
+import { compactSizeBadge, describeMetrics, fileCount, formatSize, inlineLabel } from '../src/core/format'
 import { ResourceMatcher } from '../src/core/matcher'
 import { ScanCancelled, SizeScanner } from '../src/core/scanner'
 import { sizeSeverity } from '../src/core/severity'
@@ -21,6 +21,17 @@ const defaults: Settings = {
   fileColorThresholdsMiB: [0.25, 1, 5],
   folderColorThresholdsMiB: [10, 50, 100],
 }
+
+it('compact badges fit the native API and retain an indicator when sizes need more characters', () => {
+  assert.equal(compactSizeBadge(0, 'decimal'), '0')
+  assert.equal(compactSizeBadge(10, 'decimal'), '10')
+  assert.equal(compactSizeBadge(1500, 'decimal'), '2K')
+  assert.equal(compactSizeBadge(1024, 'binary'), '1K')
+  assert.equal(compactSizeBadge(10_000, 'decimal'), 'ⓘ')
+  for (const bytes of [0, 1, 99, 100, 999, 1000, 9999, 10_000, 1024 ** 5]) {
+    assert.ok(compactSizeBadge(bytes, 'decimal').length <= 2)
+  }
+})
 
 class MemoryFs implements FileSystem {
   readonly entries = new Map<string, FileStat>()

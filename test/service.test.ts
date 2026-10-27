@@ -47,7 +47,7 @@ vi.mock('vscode', async () => {
         const root = Uri.parse(state.workspaceRoot)
         return uri.toString() === root.toString() || uri.toString().startsWith(`${root}/`) ? { uri: root } : undefined
       },
-      getConfiguration: () => ({ get: (key: string, fallback: unknown) => state.config[key] ?? fallback }),
+      getConfiguration: vi.fn(() => ({ get: (key: string, fallback: unknown) => state.config[key] ?? fallback })),
       fs: {
         stat: vi.fn(async (uri: Uri) => {
           await state.beforeStat?.(uri.toString())
@@ -85,6 +85,7 @@ it('path matching is synchronous and performs no filesystem reads', () => {
     assert.equal(service.matches(vscode.Uri.joinPath(assets, 'node_modules', 'logo.png')), false)
     assert.equal(vi.mocked(vscode.workspace.fs.stat).mock.calls.length, 0)
     assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.length, 0)
+    assert.deepEqual(vi.mocked(vscode.workspace.getConfiguration).mock.calls.map(([namespace]) => namespace), ['assetMeter'])
   }
   finally { service.dispose() }
 })
@@ -127,15 +128,48 @@ it('switching display modes keeps inline metrics with a hover marker and refresh
   finally { decorations.dispose(); service.dispose() }
 })
 
-it.each(['always', 'hover'])('unpatched hosts keep tooltip details without long badges in %s mode', async (mode) => {
+it.each(['always', 'hover'])('unpatched hosts provide visible compact badges in always mode and exact tooltip details in %s mode', async (mode) => {
   state.config.displayMode = mode
   const service = new SizeService()
   const decorations = new SizeDecorationProvider(service)
   try {
     const folder = await decorations.provideFileDecoration(assets, token)
-    assert.equal(folder?.badge, undefined)
+    assert.equal(folder?.badge, mode === 'always' ? '10' : undefined)
     assert.match(folder?.tooltip ?? '', /Files: 1/)
     assert.match(folder?.tooltip ?? '', /Size: 10 B/)
+    assert.match(folder?.tooltip ?? '', /Install \/ Reapply Native Explorer Patch/)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it('matching diagnostics explain skipped resources without reading the filesystem', () => {
+  const service = new SizeService()
+  try {
+    assert.equal(service.inspectMatch(logo).reason, 'included')
+    assert.equal(service.inspectMatch(vscode.Uri.joinPath(assets, 'notes.txt')).reason, 'include-not-matched-or-negated')
+    assert.equal(service.inspectMatch(vscode.Uri.joinPath(assets, 'node_modules', 'logo.png')).reason, 'excluded')
+    assert.equal(service.inspectMatch(vscode.Uri.parse('file:///outside/logo.png')).reason, 'outside-workspace')
+    state.config.enabled = false
+    service.invalidate(undefined, true)
+    assert.equal(service.inspectMatch(logo).reason, 'disabled')
+    assert.equal(vi.mocked(vscode.workspace.fs.stat).mock.calls.length, 0)
+  }
+  finally { service.dispose() }
+})
+
+it('decoration logging records matches, measurements and read failures instead of hiding errors', async () => {
+  const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+  const service = new SizeService(log)
+  const decorations = new SizeDecorationProvider(service, false, log)
+  try {
+    assert.ok(await decorations.provideFileDecoration(logo, token))
+    assert.ok(log.debug.mock.calls.some(([message]) => message.includes('Decoration match:')))
+    assert.ok(log.debug.mock.calls.some(([message]) => message.includes('Measured:')))
+    state.entries.delete(logo.toString())
+    service.invalidate([logo])
+    assert.equal(await decorations.provideFileDecoration(logo, token), undefined)
+    assert.ok(log.warn.mock.calls.some(([message]) => message.includes('Filesystem stat failed:')))
+    assert.ok(log.error.mock.calls.some(([message]) => message.includes('Decoration failed:')))
   }
   finally { decorations.dispose(); service.dispose() }
 })
@@ -194,6 +228,90 @@ it('include globs use workspace paths and configuration changes rebuild decorati
     state.config.include = []
     service.invalidate(undefined, true)
     assert.equal(await decorations.provideFileDecoration(logo, token), undefined)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it.each([
+  { name: 'empty include', include: [], exclude: [] },
+  { name: 'unmatched include', include: ['**/*.jpg'], exclude: [] },
+  { name: 'excluded file', include: ['**/*.png'], exclude: ['**/*.png'] },
+  { name: 'excluded ancestor', include: ['**/*.png'], exclude: ['assets'] },
+  { name: 'negated include', include: ['**/*.png', '!assets/**'], exclude: [] },
+])('$name skips decoration without reading the filesystem', async ({ include, exclude }) => {
+  state.config = { ...state.config, include, exclude }
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    assert.equal(await decorations.provideFileDecoration(logo, token), undefined)
+    assert.equal(vi.mocked(vscode.workspace.fs.stat).mock.calls.length, 0)
+    assert.equal(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.length, 0)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it('include filters decorations while only exclude reduces folder sizes and counts', async () => {
+  const notes = vscode.Uri.joinPath(assets, 'notes.txt')
+  const drafts = vscode.Uri.joinPath(assets, 'drafts')
+  const draft = vscode.Uri.joinPath(drafts, 'draft.png')
+  const privateFolder = vscode.Uri.joinPath(assets, 'private')
+  const privateFile = vscode.Uri.joinPath(privateFolder, 'secret.png')
+  state.entries.set(notes.toString(), { type: vscode.FileType.File, size: 5 })
+  state.entries.set(drafts.toString(), { type: vscode.FileType.Directory, size: 0 })
+  state.entries.set(draft.toString(), { type: vscode.FileType.File, size: 20 })
+  state.entries.set(privateFolder.toString(), { type: vscode.FileType.Directory, size: 0 })
+  state.entries.set(privateFile.toString(), { type: vscode.FileType.File, size: 100 })
+  state.config.include = ['assets', '**/*.png', '!**/drafts/**']
+  state.config.exclude = ['**/private/**']
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  try {
+    assert.ok(await decorations.provideFileDecoration(logo, token))
+    assert.equal(await decorations.provideFileDecoration(notes, token), undefined)
+    assert.equal(await decorations.provideFileDecoration(draft, token), undefined)
+    assert.equal(await decorations.provideFileDecoration(privateFile, token), undefined)
+    assert.equal(service.isExcluded(draft), false)
+    assert.equal(service.isExcluded(privateFile), true)
+    const metrics = await service.measure(assets)
+    assert.equal(metrics.bytes, 35)
+    assert.equal(metrics.files, 3)
+    assert.equal(metrics.directFiles, 2)
+    assert.equal(metrics.directories, 1)
+    assert.ok(vi.mocked(vscode.workspace.fs.stat).mock.calls.every(([uri]) => !uri.path.includes('/private')))
+    assert.ok(vi.mocked(vscode.workspace.fs.readDirectory).mock.calls.every(([uri]) => !uri.path.includes('/private')))
+
+    state.config.include = []
+    service.invalidate(undefined, true)
+    assert.equal(await decorations.provideFileDecoration(assets, token), undefined)
+    assert.equal((await service.measure(assets)).bytes, 35, 'empty include must not reduce totals')
+    assert.equal((await service.measure(assets)).files, 3)
+  }
+  finally { decorations.dispose(); service.dispose() }
+})
+
+it('changing exclude invalidates existing decorations and cached ancestor totals in both directions', async () => {
+  const notes = vscode.Uri.joinPath(assets, 'notes.txt')
+  state.entries.set(notes.toString(), { type: vscode.FileType.File, size: 5 })
+  const service = new SizeService()
+  const decorations = new SizeDecorationProvider(service)
+  const notify = vi.fn()
+  decorations.onDidChangeFileDecorations(notify)
+  try {
+    assert.ok(await decorations.provideFileDecoration(logo, token))
+    assert.equal((await service.measure(assets)).bytes, 15)
+    state.config.exclude = ['**/*.png']
+    service.invalidate(undefined, true)
+    assert.equal(await decorations.provideFileDecoration(logo, token), undefined)
+    assert.equal(service.inspectMatch(logo).reason, 'excluded')
+    assert.equal((await service.measure(assets)).bytes, 5)
+    assert.equal((await service.measure(assets)).files, 1)
+
+    state.config.exclude = []
+    service.invalidate(undefined, true)
+    assert.ok(await decorations.provideFileDecoration(logo, token))
+    assert.equal((await service.measure(assets)).bytes, 15)
+    assert.equal((await service.measure(assets)).files, 2)
+    assert.deepEqual(notify.mock.calls, [[undefined], [undefined]])
   }
   finally { decorations.dispose(); service.dispose() }
 })

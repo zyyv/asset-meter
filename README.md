@@ -32,7 +32,7 @@ See file sizes and folder counts where you already work: VS Code's Explorer. Fin
     logo.svg                                 39 B
 ```
 
-> **Inline labels require an optional native Explorer patch.** VS Code's standard decoration API limits badges to two characters. The patch modifies three desktop program files, triggers VS Code's integrity warning and must be reapplied after editor updates. Hover tooltips and image compression work without it. Read [Native Explorer patch](#native-explorer-patch) before enabling inline labels.
+> **Full inline labels require an optional native Explorer patch.** VS Code's standard decoration API limits badges to two characters. Without the patch, always mode shows rounded compact badges such as `2K` (no suffix means bytes), or `ⓘ` when the size needs more characters; hover for the exact size. The patch modifies three desktop program files, triggers VS Code's integrity warning and must be reapplied after editor updates. Read [Native Explorer patch](#native-explorer-patch) before enabling full inline labels.
 
 ## Quick start
 
@@ -91,7 +91,7 @@ Configured arrays **replace** the defaults. Matching uses [picomatch](https://gi
 | Setting | Default | Description |
 | --- | --- | --- |
 | `assetMeter.enabled` | `true` | Enable size calculations and decorations. |
-| `assetMeter.displayMode` | `"always"` | Keep labels visible; `"hover"` shows counts and sizes on the right only while hovering that Explorer row. Both require the patch; tooltips work without it. |
+| `assetMeter.displayMode` | `"always"` | Keep labels visible, with compact badges or `ⓘ` without the patch. `"hover"` shows full counts and sizes on row hover with the patch, or tooltips without it. |
 | `assetMeter.include` | Common asset formats and folders | Workspace-relative glob patterns for files and folders; supports `**`, `*`, braces, extglobs and negated patterns. `"**/*"` matches all resources; `[]` hides decorations. Does not limit folder totals. |
 | `assetMeter.exclude` | VCS, dependencies, `.DS_Store` | Workspace-relative glob patterns. Matching resources and their descendants are excluded from decorations and totals. |
 | `assetMeter.showFileCount` | `true` | Show the file count before folder size. |
@@ -133,9 +133,17 @@ Customize `assetMeter.sizeWarning`, `assetMeter.sizeLarge` and `assetMeter.sizeC
 | **Asset Meter: Refresh Sizes** | Recalculate sizes and folder totals. |
 | **Asset Meter: Toggle Always / Hover** | Toggle always-visible labels and labels shown on row hover. |
 | **Asset Meter: Open Settings** | Open this extension's settings. |
+| **Asset Meter: Show Logs** | Open the Asset Meter log in the Output panel. |
+| **Asset Meter: Diagnose File Matching** | Log matching reasons, effective configuration, sizes and patch status for a resource. |
 | **Asset Meter: Compress Image** | Compress an image and open its comparison. |
 | **Asset Meter: Install / Reapply Native Explorer Patch** | Install, upgrade or reapply the optional patch. |
 | **Asset Meter: Restore Native Explorer Patch** | Restore the original desktop program files. |
+
+## Logs and matching diagnostics
+
+Run **Asset Meter: Show Logs**, or select **Asset Meter** in **View → Output**. Info logs cover activation, workspaces, effective matching settings, patch status, refreshes and filesystem errors. File contents and TinyPNG API keys are never logged.
+
+Right-click a resource and run **Asset Meter: Diagnose File Matching** to log its workspace path, match or skip reason, effective rules and measured bytes/counts. From the command palette it uses the active text file, or asks you to select a file/folder. It also reports missing patches, pending reloads and disabled `explorer.decorations.badges`. For per-resource automatic logs, run **Developer: Set Log Level... → Asset Meter → Debug**, then **Asset Meter: Refresh Sizes**. Restore Info after troubleshooting.
 
 ## Native Explorer patch
 
@@ -161,7 +169,7 @@ Results are calculated on demand, sharing cached file stats and subtree totals a
 
 | Situation | What to check |
 | --- | --- |
-| Only tooltips appear | Reapply the patch, reload and enable `explorer.decorations.badges`. In `"hover"` mode, move the pointer over the Explorer row to reveal its label. |
+| Only compact badges, `ⓘ` or tooltips appear | Reapply the patch for full inline labels, reload and enable `explorer.decorations.badges`. In `"hover"` mode, move the pointer over the Explorer row to reveal its label. |
 | No size for an item | Check matching rules, exclusions, `assetMeter.enabled` and symbolic links. |
 | Remote SSH, WSL or Dev Containers | Calculations use the workspace extension host. Inline labels require access to local desktop program files; do not assume patch support in remote sessions. |
 | Virtual workspace | Totals depend on the filesystem provider's stat, enumeration and watch support. |

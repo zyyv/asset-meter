@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import * as vscode from 'vscode'
+import { compactSizeBadge } from '../src/core/format'
 import { SizeDecorationProvider } from '../src/decorations'
 import { getNativePatchStatus } from '../src/nativePatch'
 import { SizeService } from '../src/service'
@@ -64,9 +65,9 @@ export async function run(): Promise<void> {
     assert.equal(await api.getSize(vscode.Uri.joinPath(assets, 'node_modules', 'skip.png')), undefined)
 
     const native = await decorations.provideFileDecoration(assets, cancellation.token)
-    assert.equal(native?.badge, patched ? '\u2063\u20603 files · 2.3 KB\u2063' : undefined)
+    assert.equal(native?.badge, patched ? '\u2063\u20603 files · 2.3 KB\u2063' : compactSizeBadge(2305, 'decimal'))
     assert.match(native?.tooltip ?? '', /Files: 3/)
-    assert.equal((await decorations.provideFileDecoration(logo, cancellation.token))?.badge, patched ? '\u2063\u20601.5 KB\u2063' : undefined)
+    assert.equal((await decorations.provideFileDecoration(logo, cancellation.token))?.badge, patched ? '\u2063\u20601.5 KB\u2063' : compactSizeBadge(1536, 'decimal'))
     assert.equal(await decorations.provideFileDecoration(vscode.Uri.joinPath(assets, 'nested', 'readme.txt'), cancellation.token), undefined)
 
     assert.equal(extension.packageJSON.contributes.views, undefined, 'No additional Explorer panel is contributed')
@@ -78,6 +79,31 @@ export async function run(): Promise<void> {
     assert.equal(hover?.badge, patched ? '\u2063\u2060\u20621.5 KB\u2063' : undefined)
     assert.match(hover?.tooltip ?? '', /1.5 KB/)
     assert.equal((await decorations.provideFileDecoration(assets, cancellation.token))?.badge, patched ? '\u2063\u2060\u20623 files · 2.3 KB\u2063' : undefined)
+
+    const diagnosis = await vscode.commands.executeCommand<{ matched: boolean, reason: string, metrics: { bytes: number } }>('assetMeter.diagnose', logo)
+    assert.equal(diagnosis?.matched, true)
+    assert.equal(diagnosis?.metrics.bytes, 1536)
+    const skipped = await vscode.commands.executeCommand<{ matched: boolean, reason: string }>('assetMeter.diagnose', vscode.Uri.joinPath(assets, 'node_modules', 'skip.png'))
+    assert.equal(skipped?.matched, false)
+    assert.equal(skipped?.reason, 'excluded')
+    console.log('Asset Meter integration: Output diagnostics report sizes and excluded-resource reasons')
+
+    // Exercise include globs and live changes through VS Code's configuration service.
+    const products = vscode.Uri.joinPath(root, 'products')
+    await vscode.workspace.fs.createDirectory(products)
+    await config.update('include', ['**/*.png', '**/products'], vscode.ConfigurationTarget.Workspace)
+    await waitFor(async () => (await vscode.commands.executeCommand<{ matched: boolean }>('assetMeter.diagnose', products))?.matched === true)
+    service.invalidate(undefined, true)
+    assert.equal(service.matches(products), true)
+    assert.equal(service.matches(logo), true)
+    await config.update('include', [], vscode.ConfigurationTarget.Workspace)
+    await waitFor(async () => (await vscode.commands.executeCommand<{ matched: boolean }>('assetMeter.diagnose', products))?.matched === false)
+    await waitFor(async () => (await vscode.commands.executeCommand<{ matched: boolean }>('assetMeter.diagnose', logo))?.matched === false)
+    await config.update('include', undefined, vscode.ConfigurationTarget.Workspace)
+    await waitFor(async () => (await vscode.commands.executeCommand<{ matched: boolean }>('assetMeter.diagnose', logo))?.matched === true)
+    service.invalidate(undefined, true)
+    assert.equal(service.matches(products), false, 'unsetting include restores the default glob rules')
+    console.log('Asset Meter integration: include globs, empty include, default rules and live changes reload')
 
     await config.update('fileColorThresholdsMiB', [0.00025, 0.001, 0.005], vscode.ConfigurationTarget.Workspace)
     service.invalidate(undefined, true)
@@ -108,6 +134,8 @@ export async function run(): Promise<void> {
     await vscode.commands.executeCommand('assetMeter.refresh')
     assert.equal(await api.getSize(assets), undefined)
     const commands = await vscode.commands.getCommands(true)
+    assert.ok(commands.includes('assetMeter.showOutput'))
+    assert.ok(commands.includes('assetMeter.diagnose'))
     assert.ok(commands.includes('assetMeter.toggleDisplayMode'))
     assert.ok(commands.includes('assetMeter.restoreNativePatch'))
     console.log('Asset Meter: native labels, colors, no extra panel, settings and live filesystem updates passed.')

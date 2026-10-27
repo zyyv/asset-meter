@@ -72,6 +72,15 @@
         "icon": "$(gear)"
       },
       {
+        "command": "assetMeter.showOutput",
+        "title": "Asset Meter: Show Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "assetMeter.diagnose",
+        "title": "Asset Meter: Diagnose File Matching"
+      },
+      {
         "command": "assetMeter.compressImage",
         "title": "Asset Meter: Compress Image",
         "icon": "$(fold)"
@@ -95,6 +104,10 @@
           "command": "assetMeter.compressImage",
           "when": "resourceExtname =~ /\\.(jpe?g|jpe|png|webp)$/i",
           "group": "7_modification@91"
+        },
+        {
+          "command": "assetMeter.diagnose",
+          "group": "7_modification@92"
         }
       ],
       "editor/title": [
@@ -153,7 +166,7 @@
             "hover"
           ],
           "enumDescriptions": [
-            "Show file counts followed by full sizes in Explorer. Requires the native Explorer patch.",
+            "Show file counts followed by full sizes with the native Explorer patch. Without it, show compact size badges or ⓘ with exact sizes in tooltips.",
             "Show file counts and sizes on the right only while hovering an Explorer row. Requires the native Explorer patch; tooltips remain available without it."
           ],
           "default": "always",
