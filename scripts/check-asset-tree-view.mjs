@@ -39,6 +39,28 @@ try {
   await mkdir(path.join(workspace, 'docs'), { recursive: true })
   await mkdir(path.join(workspace, '.vscode'), { recursive: true })
   await mkdir(path.join(profile, 'User'), { recursive: true })
+  const svgFixture = path.join(temporary, 'extensions', 'asset-meter-svg-fixture')
+  await mkdir(svgFixture, { recursive: true })
+  await writeFile(path.join(svgFixture, 'package.json'), JSON.stringify({
+    name: 'asset-meter-svg-fixture',
+    publisher: 'test',
+    version: '1.0.0',
+    engines: { vscode: '^1.90.0' },
+    main: './extension.js',
+    contributes: { commands: [{ command: 'assetMeterTest.editSvg', title: 'Asset Meter Test: Edit SVG' }] },
+  }))
+  await writeFile(path.join(svgFixture, 'extension.js'), `
+    const vscode = require('vscode')
+    exports.activate = (context) => {
+      context.subscriptions.push(vscode.commands.registerCommand('assetMeterTest.editSvg', async () => {
+        const uri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, 'assets', 'logo.svg')
+        const document = await vscode.workspace.openTextDocument(uri)
+        const edit = new vscode.WorkspaceEdit()
+        edit.replace(uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), document.getText().replace('#f5b942', '#42b9f5'))
+        await vscode.workspace.applyEdit(edit)
+      }))
+    }
+  `)
   await writeFile(path.join(workspace, 'assets/images/hero.png'), Buffer.alloc(1536))
   await writeFile(path.join(workspace, 'assets/logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
   await writeFile(path.join(workspace, 'assets/notes.txt'), 'notes')
@@ -49,6 +71,7 @@ try {
     'assetMeter.units': 'decimal',
     'assetMeter.displayMode': 'hover',
     'assetMeter.refreshDelay': 100,
+    'workbench.editorAssociations': { '*.svg': 'imagePreview.previewEditor' },
   }
   const settingsFile = path.join(workspace, '.vscode/settings.json')
   await writeFile(settingsFile, JSON.stringify(settings))
@@ -64,7 +87,7 @@ try {
     'window.menuStyle': 'custom',
     'security.workspace.trust.enabled': false,
   }))
-  child = spawn(executable, [workspace, '--user-data-dir', profile, '--extensions-dir', path.join(temporary, 'extensions'), `--extensionDevelopmentPath=${root}`, '--disable-extensions', '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', '--disable-updates', '--no-sandbox', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  child = spawn(executable, [workspace, '--user-data-dir', profile, '--extensions-dir', path.join(temporary, 'extensions'), `--extensionDevelopmentPath=${root}`, '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', '--disable-updates', '--no-sandbox', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] })
   const capture = (data) => { log = (log + data.toString()).slice(-20_000) }
   child.stdout.on('data', capture); child.stderr.on('data', capture)
   child.on('error', (error) => { log += error.message })
@@ -72,6 +95,13 @@ try {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
   page = await waitFor(async () => browser.contexts()[0]?.pages().find(candidate => /workbench.*html/.test(candidate.url())))
   const prefix = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const command = async (title) => {
+    await page.keyboard.press('F1')
+    const input = page.locator('.quick-input-widget input').first()
+    await input.fill(`>${title}`)
+    await page.locator('.quick-input-list .monaco-list-row').filter({ hasText: title }).first().click()
+    await input.waitFor({ state: 'hidden' })
+  }
   await page.keyboard.press(`${prefix}+Shift+E`)
   const header = page.locator('.pane-header').filter({ hasText: /^Asset Meter$/i })
   await header.waitFor({ state: 'visible' })
@@ -79,7 +109,7 @@ try {
   const pane = header.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " pane ")][1]')
   const view = pane.locator('.pane-body')
   await view.waitFor({ state: 'visible' })
-  const explorerHeader = page.locator('.explorer-folders-view').locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " pane ")][1]').locator('.pane-header')
+  const explorerHeader = page.locator('.pane-header').filter({ hasText: /^workspace$/i })
   if (await explorerHeader.getAttribute('aria-expanded') === 'true') { await explorerHeader.click() }
   const name = value => view.locator('.label-name').filter({ hasText: new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) })
   const row = value => name(value).locator('xpath=ancestor::*[contains(@class,"monaco-list-row")][1]')
@@ -129,11 +159,72 @@ try {
   await name('hero.png').waitFor({ state: 'visible' })
   await mkdir(path.join(root, 'artifacts'), { recursive: true })
   await page.locator('.part.sidebar').screenshot({ path: path.join(root, 'artifacts/asset-tree-preview.png') })
+  // Exercise SVG modes in the real editor, including unsaved native text edits.
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><circle cx="80" cy="80" r="64" fill="#f5b942"/></svg>'
+  await writeFile(path.join(workspace, 'assets/logo.svg'), svg)
+  const groups = page.locator('.editor-group-container')
+  const source = page.locator('.editor-group-container .monaco-editor[data-uri$="/assets/logo.svg"]')
+  const image = async () => waitFor(async () => {
+    for (const frame of page.frames()) {
+      const candidate = frame.locator('img[src^="data:image/svg+xml;base64,"]')
+      if (await candidate.count()) { return candidate }
+    }
+  })
+  await name('logo.svg').click()
+  await source.waitFor({ state: 'visible' })
+  let svgImage = await image()
+  await waitFor(async () => await svgImage.evaluate(element => element.complete && element.naturalWidth > 0))
+  assert.equal(await groups.count(), 2, 'Both is the default and opens two editor groups')
+  assert.equal(Buffer.from((await svgImage.getAttribute('src')).split(',')[1], 'base64').toString(), svg)
+  const editedSvg = svg.replace('#f5b942', '#42b9f5')
+  await command('Asset Meter Test: Edit SVG')
+  await waitFor(async () => {
+    svgImage = await image()
+    return Buffer.from((await svgImage.getAttribute('src')).split(',')[1], 'base64').toString() === editedSvg
+  })
+  await page.screenshot({ path: path.join(root, 'artifacts/svg-both-preview.png') })
+  await command('File: Save All')
+  settings['assetMeter.svgOpenMode'] = 'image'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(async () => await groups.count() === 1 && !(await source.isVisible()))
+  await image()
+  settings['assetMeter.svgOpenMode'] = 'code'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await source.waitFor({ state: 'visible' })
+  await waitFor(async () => await groups.count() === 1)
+  settings['assetMeter.svgOpenMode'] = 'both'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await image()
+  await waitFor(async () => await groups.count() === 2)
+  // Opening the next SVG while the image group is focused must reuse the pane.
+  await writeFile(path.join(workspace, 'assets/other.SVG'), svg.replace('#f5b942', '#b942f5'))
+  await page.locator('.editor-group-container .tab').filter({ hasText: 'Preview: logo.svg' }).click()
+  await waitFor(async () => {
+    await expand('assets')
+    return name('other.SVG').isVisible()
+  })
+  await name('other.SVG').click()
+  await image()
+  await waitFor(async () => (await page.locator('.editor-group-container .monaco-editor[data-uri$="/assets/other.SVG"]').count()) === 1)
+  assert.equal(await groups.count(), 2, 'switching SVGs reuses the preview group')
+  // The original Explorer uses the same behavior through native text opening.
+  await command('View: Close All Editors')
+  await waitFor(async () => await groups.count() === 1)
+  if (await explorerHeader.getAttribute('aria-expanded') !== 'true') { await explorerHeader.click() }
+  const explorer = page.locator('.explorer-folders-view')
+  const nativeAssets = explorer.locator('.label-name').filter({ hasText: /^assets$/ }).locator('xpath=ancestor::*[contains(@class,"monaco-list-row")][1]')
+  if (await nativeAssets.getAttribute('aria-expanded') !== 'true') { await nativeAssets.locator('.monaco-tl-twistie').click() }
+  await explorer.locator('.label-name').filter({ hasText: /^logo\.svg$/ }).click()
+  await source.waitFor({ state: 'visible' })
+  await image()
+  assert.equal(await groups.count(), 2, 'native Explorer also opens source and image')
+  console.log('SVG UI passed: default Both, live unsaved edits, Image / Code mode changes, uppercase SVGs, pane reuse and native Explorer clicks.')
+  await explorerHeader.click()
   settings['assetMeter.include'] = []
   await writeFile(settingsFile, JSON.stringify(settings))
   await view.getByText('No matching files or folders.', { exact: false }).waitFor({ state: 'visible' })
-  await view.getByRole('button', { name: 'Open Asset Meter Settings' }).click()
-  await page.getByRole('textbox', { name: /Search settings/i }).waitFor({ state: 'visible' })
+  await view.getByRole('button', { name: 'Open Asset Meter Settings' }).press('Enter')
+  await page.locator('.settings-editor').waitFor({ state: 'visible' })
   assert.doesNotMatch(log, /Error from file decoration provider|No tree view with id/)
   console.log('Asset tree UI passed: filtered hierarchy, full metrics with decoration badges disabled, theme icons, context actions, automatic updates, refresh, collapse, empty state and settings.')
 }
@@ -142,6 +233,11 @@ catch (error) {
   if (page) {
     await page.screenshot({ path: path.join(root, 'artifacts/asset-tree-ui-failure.png') }).catch(() => {})
     console.error(await page.locator('.part.sidebar .pane-header, .part.sidebar .label-name, .part.sidebar .welcome').allTextContents().catch(() => []))
+    console.error('Editor text:', await page.locator('.editor-group-container .view-lines').allTextContents().catch(() => []))
+    for (const frame of page.frames()) {
+      const sources = await frame.locator('img[src^="data:image/svg+xml;base64,"]').evaluateAll(elements => elements.map(element => element.getAttribute('src'))).catch(() => [])
+      for (const src of sources) { console.error('SVG preview source:', Buffer.from(src.split(',')[1], 'base64').toString()) }
+    }
   }
   console.error(log)
   throw error

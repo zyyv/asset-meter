@@ -7,6 +7,7 @@ import { ImageCompression } from './compression/preview'
 import { SizeDecorationProvider } from './decorations'
 import { getNativePatchStatus, installNativePatch, restoreNativePatch } from './nativePatch'
 import { SizeService } from './service'
+import { SvgPreview } from './svgPreview'
 
 export interface AssetMeterApi {
   getSize: (uri: vscode.Uri) => Promise<Metrics | undefined>
@@ -27,6 +28,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     void service.refresh(uris).catch(error => output.error('Failed to refresh sizes.', error))
   }
   const compression = new ImageCompression(context, uri => refresh([uri]))
+  const svgPreview = new SvgPreview(output)
   const readPatchStatus = () => getNativePatchStatus(vscode.env.appRoot).catch((error) => {
     output.error('Failed to read native Explorer patch status.', error)
     return { installed: false, needsUpgrade: false, appliedAt: 0, reason: error instanceof Error ? error.message : String(error) }
@@ -85,6 +87,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     assetView,
     decorations,
     compression,
+    svgPreview,
+    vscode.commands.registerCommand('assetMeter.openSvg', (uri: vscode.Uri) => svgPreview.open(uri)),
     vscode.commands.registerCommand('assetMeter.compressImage', (resource?: vscode.Uri | AssetTreeNode) => compression.compress(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.revealInExplorer', (resource?: vscode.Uri | AssetTreeNode) => {
       const uri = assetResource(resource)

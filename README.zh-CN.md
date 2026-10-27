@@ -50,6 +50,8 @@ Explorer 中的 **Asset Meter** 面板按 `assetMeter.include` / `assetMeter.exc
 
 面板工具栏提供 **刷新、全部折叠、设置**。文件保存、创建、删除、重命名和规则变更会自动刷新。右键资源可在原 Explorer 中定位、诊断匹配规则，JPEG / PNG / WebP 还可直接进入现有压缩流程。没有匹配项时提供设置入口。
 
+点击原生 Explorer 或 Asset Meter 面板中的 SVG，默认左侧打开可编辑源码、右侧显示图像预览。预览随未保存的代码修改实时更新，切换 SVG 时复用同一个预览窗格。设置中的 **Asset Meter: Svg Open Mode** 提供 **Both**（默认）、**Image**、**Code**：Image 仅显示预览，Code 仅显示源码。差异编辑器中的 SVG 不会触发预览。
+
 ## 图片压缩
 
 在 VS Code 内置图片预览中打开 **JPEG、PNG 或 WebP**，点击编辑器右上角的 **Compress Image**。也可以在 Explorer 中右键图片，或运行 **Asset Meter: Compress Image**。
@@ -82,6 +84,7 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 ```json
 {
   "assetMeter.displayMode": "always",
+  "assetMeter.svgOpenMode": "both",
   "assetMeter.include": ["**/*.{jpg,jpeg,png,svg,webp,woff2}", "**/{assets,public,images,fonts}"],
   "assetMeter.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
   "assetMeter.showFileCount": true,
@@ -99,6 +102,7 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
 | `assetMeter.enabled` | `true` | 启用体积计算和装饰。 |
+| `assetMeter.svgOpenMode` | `"both"` | **Both**：源码与实时图像预览并排显示；**Image**（`"image"`）：仅预览；**Code**（`"code"`）：仅源码。适用于原生 Explorer 和 Asset Meter 面板。 |
 | `assetMeter.displayMode` | `"always"` | 常驻显示右侧标签；未安装补丁时显示短徽标或 `ⓘ`。`"hover"` 仅在鼠标移到该行时显示完整数量和大小，需补丁；未安装时仍可查看悬停提示。 |
 | `assetMeter.include` | 常见资源格式和目录 | 选择文件和文件夹的工作区相对 glob，支持 `**`、`*`、花括号、extglob 和否定模式；`"**/*"` 匹配全部资源，`[]` 关闭装饰。不限制目录总量。 |
 | `assetMeter.exclude` | 版本控制、依赖、`.DS_Store` | 工作区相对 glob；匹配资源及其后代不会显示装饰，也不计入总量。 |

@@ -235,6 +235,27 @@
           "scope": "resource",
           "description": "Choose when size information is shown."
         },
+        "assetMeter.svgOpenMode": {
+          "type": "string",
+          "enum": [
+            "both",
+            "image",
+            "code"
+          ],
+          "enumItemLabels": [
+            "Both",
+            "Image",
+            "Code"
+          ],
+          "enumDescriptions": [
+            "Show editable SVG source and a live image preview side by side.",
+            "Show only the SVG image preview.",
+            "Show only the SVG source in the text editor."
+          ],
+          "default": "both",
+          "scope": "resource",
+          "description": "Choose how SVG files open from Explorer and the Asset Meter view."
+        },
         "assetMeter.include": {
           "type": "array",
           "items": {

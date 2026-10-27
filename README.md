@@ -50,6 +50,8 @@ Full sizes appear beside filenames, with file counts and totals beside folders; 
 
 Use **Refresh**, **Collapse All** and **Settings** in the view toolbar. Saves, creates, deletes, renames and rule changes refresh it automatically. Right-click a resource to reveal it in the original Explorer or diagnose matching; JPEG / PNG / WebP images also offer the existing compression workflow. An empty view links to matching settings.
 
+Click an SVG in Explorer or the Asset Meter view to open editable source on the left and an image preview on the right. The preview follows unsaved edits and reuses the same pane when switching SVGs. In Settings, **Asset Meter: Svg Open Mode** offers **Both** (default), **Image** and **Code**. Image shows the preview alone; Code uses the text editor alone. SVGs opened in a diff editor are left in the diff view.
+
 ## Compress images
 
 Open a **JPEG, PNG or WebP** image in VS Code's built-in image preview and click **Compress Image** in the editor toolbar. You can also right-click an image in Explorer or run **Asset Meter: Compress Image**.
@@ -82,6 +84,7 @@ Open **Settings → Extensions → Asset Meter**, or add this example to `.vscod
 ```json
 {
   "assetMeter.displayMode": "always",
+  "assetMeter.svgOpenMode": "both",
   "assetMeter.include": ["**/*.{jpg,jpeg,png,svg,webp,woff2}", "**/{assets,public,images,fonts}"],
   "assetMeter.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
   "assetMeter.showFileCount": true,
@@ -99,6 +102,7 @@ Configured arrays **replace** the defaults. Matching uses [picomatch](https://gi
 | Setting | Default | Description |
 | --- | --- | --- |
 | `assetMeter.enabled` | `true` | Enable size calculations and decorations. |
+| `assetMeter.svgOpenMode` | `"both"` | **Both**: editable source and live image preview side by side. **Image** (`"image"`): preview only. **Code** (`"code"`): source only. Applies to Explorer and the Asset Meter view. |
 | `assetMeter.displayMode` | `"always"` | Keep labels visible, with compact badges or `ⓘ` without the patch. `"hover"` shows full counts and sizes on row hover with the patch, or tooltips without it. |
 | `assetMeter.include` | Common asset formats and folders | Workspace-relative glob patterns for files and folders; supports `**`, `*`, braces, extglobs and negated patterns. `"**/*"` matches all resources; `[]` hides decorations. Does not limit folder totals. |
 | `assetMeter.exclude` | VCS, dependencies, `.DS_Store` | Workspace-relative glob patterns. Matching resources and their descendants are excluded from decorations and totals. |

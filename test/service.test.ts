@@ -475,6 +475,22 @@ it('asset tree shows the same full metrics, preserves theme icons and opens actu
   finally { decorations.dispose(); tree.dispose(); service.dispose() }
 })
 
+it('asset tree routes SVG files through the configured SVG opener, including uppercase extensions', async () => {
+  state.config.include = ['**/*.svg']
+  const uri = vscode.Uri.joinPath(assets, 'logo.SVG')
+  state.entries.set(uri.toString(), { type: vscode.FileType.File, size: 100 })
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  try {
+    const [folder] = await tree.getChildren()
+    const [file] = await tree.getChildren(folder)
+    const item = await tree.getTreeItem(file!)
+    assert.equal(item.command?.command, 'assetMeter.openSvg')
+    assert.deepEqual(item.command?.arguments, [uri])
+  }
+  finally { tree.dispose(); service.dispose() }
+})
+
 it('asset tree updates added, deleted and renamed branches while retaining unrelated directory caches', async () => {
   state.config.include = ['**/*.png']
   state.entries.set('file:///workspace/other', { type: 2, size: 0 })
