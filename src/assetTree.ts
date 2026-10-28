@@ -6,7 +6,6 @@ import { describeMetrics, inlineLabel } from './core/format'
 import { Limiter } from './core/limiter'
 import { ScanCancelled } from './core/scanner'
 import { silentLogger } from './log'
-import { isSvg } from './svgPreview'
 
 export interface AssetTreeNode {
   uri: vscode.Uri
@@ -75,7 +74,7 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
     item.iconPath = element.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File
     item.contextValue = element.isDirectory ? 'assetMeter.folder' : imageFormat(element.uri.path) ? 'assetMeter.image' : 'assetMeter.file'
     if (!element.isDirectory) {
-      item.command = { command: isSvg(element.uri) ? 'assetMeter.openSvg' : 'vscode.open', title: 'Open File', arguments: [element.uri] }
+      item.command = { command: 'assetMeter.openFile', title: 'Open File / Double-click to Copy', arguments: [element.uri] }
     }
     try {
       const metrics = await this.service.measure(element.uri)

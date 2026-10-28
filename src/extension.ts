@@ -3,8 +3,10 @@ import type { CompressionPlugin } from './compression/plugins'
 import type { Metrics } from './core/types'
 import * as vscode from 'vscode'
 import { assetResource, AssetTreeProvider } from './assetTree'
+import { AssetTreeActions } from './assetTreeActions'
 import { ImageCompression } from './compression/preview'
 import { SizeDecorationProvider } from './decorations'
+import { ImageClipboard } from './imageClipboard'
 import { getNativePatchStatus, installNativePatch, restoreNativePatch } from './nativePatch'
 import { SizeService } from './service'
 import { SvgPreview } from './svgPreview'
@@ -24,6 +26,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   const service = new SizeService(output)
   const assetTree = new AssetTreeProvider(service, output)
   const assetView = vscode.window.createTreeView('assetMeter.explorer', { treeDataProvider: assetTree, showCollapseAll: true })
+  const imageClipboard = new ImageClipboard()
+  const assetActions = new AssetTreeActions(output, imageClipboard)
   const refresh = (uris: readonly vscode.Uri[]) => {
     void service.refresh(uris).catch(error => output.error('Failed to refresh sizes.', error))
   }
@@ -88,6 +92,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     decorations,
     compression,
     svgPreview,
+    imageClipboard,
+    assetActions,
+    assetView.onDidChangeSelection(event => assetActions.select(event.selection[0]?.uri)),
+    assetView.onDidChangeVisibility(() => assetActions.reset()),
+    vscode.commands.registerCommand('assetMeter.openFile', (uri: vscode.Uri) => assetActions.open(uri)),
     vscode.commands.registerCommand('assetMeter.openSvg', (uri: vscode.Uri) => svgPreview.open(uri)),
     vscode.commands.registerCommand('assetMeter.compressImage', (resource?: vscode.Uri | AssetTreeNode) => compression.compress(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.revealInExplorer', (resource?: vscode.Uri | AssetTreeNode) => {
@@ -101,6 +110,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     vscode.workspace.onDidDeleteFiles((event) => { event.files.forEach(queue) }),
     vscode.workspace.onDidRenameFiles((event) => { event.files.forEach((file) => { queue(file.oldUri); queue(file.newUri) }) }),
     vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('workbench.list.openMode') || event.affectsConfiguration('assetMeter.copyType')) { assetActions.reset() }
       if (event.affectsConfiguration('assetMeter') || event.affectsConfiguration('explorer.decorations')) {
         service.invalidate(undefined, true)
         for (const folder of vscode.workspace.workspaceFolders ?? []) { service.settings(folder.uri) }
