@@ -290,6 +290,27 @@
           "scope": "resource",
           "description": "Choose when size information is shown."
         },
+        "assetMeter.copyType": {
+          "type": "string",
+          "enum": [
+            "relative",
+            "absolute",
+            "image"
+          ],
+          "enumItemLabels": [
+            "Relative Path",
+            "Absolute Path",
+            "Image"
+          ],
+          "enumDescriptions": [
+            "Copy the path relative to the file's workspace folder.",
+            "Copy the full filesystem path.",
+            "Copy the image itself as PNG, ready to paste into apps that accept images. Supports JPEG, PNG, GIF, WebP, AVIF, SVG, ICO and BMP; animated images copy the current frame. Other files show an error."
+          ],
+          "default": "relative",
+          "scope": "resource",
+          "description": "Choose what to copy when double-clicking a file in the Asset Meter view: a relative path, an absolute path or the image itself. A notification appears after copying."
+        },
         "assetMeter.svgOpenMode": {
           "type": "string",
           "enum": [

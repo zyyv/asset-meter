@@ -20,6 +20,8 @@ const profile = path.join(temporary, 'profile')
 let browser
 let child
 let page
+let command
+let clipboardSaved = false
 let log = ''
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function waitFor(action, timeout = 30_000) {
@@ -42,6 +44,8 @@ try {
   await mkdir(path.join(workspace, '.vscode'), { recursive: true })
   await mkdir(path.join(profile, 'User'), { recursive: true })
   const svgFixture = path.join(temporary, 'extensions', 'asset-meter-svg-fixture')
+  const clipboardReport = path.join(temporary, 'clipboard.json')
+  const imageReport = path.join(temporary, 'clipboard-image.json')
   await mkdir(svgFixture, { recursive: true })
   await writeFile(path.join(svgFixture, 'package.json'), JSON.stringify({
     name: 'asset-meter-svg-fixture',
@@ -49,11 +53,47 @@ try {
     version: '1.0.0',
     engines: { vscode: '^1.90.0' },
     main: './extension.js',
-    contributes: { commands: [{ command: 'assetMeterTest.editSvg', title: 'Asset Meter Test: Edit SVG' }] },
+    contributes: { commands: [
+      { command: 'assetMeterTest.editSvg', title: 'Asset Meter Test: Edit SVG' },
+      { command: 'assetMeterTest.reportClipboard', title: 'Asset Meter Test: Report Clipboard' },
+      { command: 'assetMeterTest.restoreClipboard', title: 'Asset Meter Test: Restore Clipboard' },
+      { command: 'assetMeterTest.inspectImageClipboard', title: 'Asset Meter Test: Inspect Image Clipboard' },
+    ] },
   }))
   await writeFile(path.join(svgFixture, 'extension.js'), `
     const vscode = require('vscode')
-    exports.activate = (context) => {
+    exports.activate = async (context) => {
+      const originalClipboard = await vscode.env.clipboard.readText()
+      context.subscriptions.push(vscode.commands.registerCommand('assetMeterTest.reportClipboard', async () => {
+        await require('node:fs/promises').writeFile(${JSON.stringify(clipboardReport)}, JSON.stringify({
+          text: await vscode.env.clipboard.readText(),
+          type: vscode.workspace.getConfiguration('assetMeter').get('copyType'),
+          openMode: vscode.workspace.getConfiguration('workbench').get('list.openMode'),
+        }))
+      }))
+      context.subscriptions.push(vscode.commands.registerCommand('assetMeterTest.restoreClipboard', () => vscode.env.clipboard.writeText(originalClipboard)))
+      context.subscriptions.push(vscode.commands.registerCommand('assetMeterTest.inspectImageClipboard', () => {
+        const panel = vscode.window.createWebviewPanel('assetMeterTest.clipboard', 'Test image paste', vscode.ViewColumn.Active, { enableScripts: true })
+        panel.webview.onDidReceiveMessage(async (message) => {
+          await require('node:fs/promises').writeFile(${JSON.stringify(imageReport)}, JSON.stringify(message))
+          panel.dispose()
+        })
+        panel.webview.html = \`<!DOCTYPE html><html><body><div id="paste" contenteditable="true" tabindex="0">Paste image here</div><script>
+          const vscode = acquireVsCodeApi()
+          document.addEventListener('paste', async (event) => {
+            event.preventDefault()
+            try {
+              const file = Array.from(event.clipboardData.files).find(file => file.type.startsWith('image/'))
+              if (!file) { throw new Error('No image in clipboard') }
+              const bitmap = await createImageBitmap(file)
+              const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+              const context = canvas.getContext('2d')
+              context.drawImage(bitmap, 0, 0)
+              vscode.postMessage({ type: file.type, width: bitmap.width, height: bitmap.height, pixel: Array.from(context.getImageData(0, 0, 1, 1).data) })
+            } catch (error) { vscode.postMessage({ error: String(error) }) }
+          })
+        <\/script></body></html>\`
+      }))
       context.subscriptions.push(vscode.commands.registerCommand('assetMeterTest.editSvg', async () => {
         const uri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, 'assets', 'logo.svg')
         const document = await vscode.workspace.openTextDocument(uri)
@@ -112,7 +152,7 @@ try {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
   page = await waitFor(async () => browser.contexts()[0]?.pages().find(candidate => /workbench.*html/.test(candidate.url())))
   const prefix = process.platform === 'darwin' ? 'Meta' : 'Control'
-  const command = async (title) => {
+  command = async (title) => {
     await page.keyboard.press('F1')
     const input = page.locator('.quick-input-widget input').first()
     await input.fill(`>${title}`)
@@ -270,6 +310,75 @@ try {
     await hover.waitFor({ state: 'hidden' })
   }
   console.log('Image hover UI passed: PNG and SVG images load above Path and Size, with exact bytes and bounded width.')
+  const reportClipboard = async () => {
+    await rm(clipboardReport, { force: true })
+    await command('Asset Meter Test: Report Clipboard')
+    return waitFor(async () => JSON.parse(await readFile(clipboardReport, 'utf8')))
+  }
+  const originalClipboard = (await reportClipboard()).text
+  clipboardSaved = true
+  await name('hero.png').click()
+  assert.equal((await reportClipboard()).text, originalClipboard, 'single-click does not change the clipboard')
+  const checkCopy = async (expected) => {
+    await expand('assets')
+    await expand('images')
+    await name('hero.png').waitFor({ state: 'visible' })
+    await delay(550)
+    await name('hero.png').dblclick()
+    await page.locator('.notifications-toasts').getByText(`Asset Meter: Copied path: ${expected}`, { exact: true }).waitFor({ state: 'visible' })
+    assert.equal((await reportClipboard()).text, expected, 'the clipboard contains the path shown in the success notification')
+  }
+  await checkCopy('assets/images/hero.png')
+  settings['assetMeter.copyType'] = 'absolute'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(async () => (await reportClipboard()).type === 'absolute')
+  await checkCopy(path.join(workspace, 'assets/images/hero.png'))
+  settings['assetMeter.copyType'] = 'relative'
+  settings['workbench.list.openMode'] = 'doubleClick'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(async () => {
+    const report = await reportClipboard()
+    return report.type === 'relative' && report.openMode === 'doubleClick'
+  })
+  await checkCopy('assets/images/hero.png')
+  settings['workbench.list.openMode'] = 'singleClick'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(async () => (await reportClipboard()).openMode === 'singleClick')
+  settings['assetMeter.copyType'] = 'image'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(async () => (await reportClipboard()).type === 'image')
+  for (const [filename, width, height] of [['hero.png', 1, 1], ['logo.svg', 160, 160]]) {
+    await expand('assets')
+    if (filename === 'hero.png') { await expand('images') }
+    await name(filename).waitFor({ state: 'visible' })
+    await delay(550)
+    await name(filename).dblclick()
+    const relativePath = filename === 'hero.png' ? 'assets/images/hero.png' : 'assets/logo.svg'
+    await page.locator('.notifications-toasts').getByText(`Asset Meter: Copied image: ${relativePath}`, { exact: true }).waitFor({ state: 'visible' })
+    assert.equal(await page.locator('.editor-group-container .tab').filter({ hasText: `Copy image: ${filename}` }).count(), 0, 'the temporary copying tab closes after success')
+    await rm(imageReport, { force: true })
+    await command('Asset Meter Test: Inspect Image Clipboard')
+    const target = await waitFor(async () => {
+      for (const frame of page.frames()) {
+        const candidate = frame.locator('#paste')
+        if (await candidate.count()) { return candidate }
+      }
+    })
+    await target.click()
+    await target.press(`${prefix}+V`)
+    const image = await waitFor(async () => JSON.parse(await readFile(imageReport, 'utf8')))
+    assert.equal(image.type, 'image/png', JSON.stringify(image))
+    assert.equal(image.width, width)
+    assert.equal(image.height, height)
+    if (filename === 'logo.svg') { assert.equal(image.pixel[3], 0, 'SVG transparency survives copying') }
+    console.log(`Image copy and paste passed: ${filename}, ${width} × ${height}.`)
+  }
+  settings['assetMeter.copyType'] = 'relative'
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(async () => (await reportClipboard()).type === 'relative')
+  await command('Asset Meter Test: Restore Clipboard')
+  clipboardSaved = false
+  console.log('Copy UI passed: relative / absolute paths, image content pasted as PNG, SVG transparency, live settings, success notifications and double-click opening mode.')
   await name('hero.png').click({ button: 'right' })
   await page.getByRole('menuitem', { name: /Compress Image/ }).waitFor({ state: 'visible' })
   await page.getByRole('menuitem', { name: /Reveal in Explorer/ }).waitFor({ state: 'visible' })
@@ -475,6 +584,7 @@ catch (error) {
   throw error
 }
 finally {
+  if (clipboardSaved && page && command) { await command('Asset Meter Test: Restore Clipboard').catch(() => {}) }
   if (browser) { await browser.close() }
   if (child && child.exitCode === null) {
     child.kill('SIGTERM')
