@@ -79,9 +79,20 @@
     ],
     "commands": [
       {
+        "command": "assetMeter.previewImage",
+        "title": "Asset Meter: Open Image Details",
+        "icon": "$(info)"
+      },
+      {
         "command": "assetMeter.revealInExplorer",
         "title": "Asset Meter: Reveal in Explorer",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "assetMeter.revealInFinder",
+        "title": "Asset Meter: Reveal in Finder",
+        "icon": "$(folder-opened)",
+        "enablement": "isMac && !remoteName"
       },
       {
         "command": "assetMeter.refresh",
@@ -136,9 +147,19 @@
       ],
       "view/item/context": [
         {
+          "command": "assetMeter.previewImage",
+          "when": "view == assetMeter.explorer && viewItem =~ /^assetMeter\\.(image|previewImage)$/",
+          "group": "assetMeter@0"
+        },
+        {
           "command": "assetMeter.revealInExplorer",
           "when": "view == assetMeter.explorer",
           "group": "navigation@1"
+        },
+        {
+          "command": "assetMeter.revealInFinder",
+          "when": "view == assetMeter.explorer && isMac && !remoteName",
+          "group": "navigation@2"
         },
         {
           "command": "assetMeter.compressImage",
@@ -155,9 +176,18 @@
         {
           "command": "assetMeter.revealInExplorer",
           "when": "false"
+        },
+        {
+          "command": "assetMeter.revealInFinder",
+          "when": "false"
         }
       ],
       "explorer/context": [
+        {
+          "command": "assetMeter.previewImage",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(jpe?g|jpe|png|webp|gif|avif|svg|ico|bmp|tiff?|heic|heif|iiq)$/i",
+          "group": "7_modification@89"
+        },
         {
           "command": "assetMeter.refresh",
           "group": "7_modification@90"
@@ -424,6 +454,7 @@
     "@jsquash/jpeg": "^1.6.0",
     "@jsquash/oxipng": "^2.3.0",
     "@jsquash/webp": "^1.5.0",
+    "exifr": "^7.1.3",
     "picomatch": "^4.0.7"
   },
   "devDependencies": {

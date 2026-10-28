@@ -23,7 +23,20 @@ export default defineConfig([
       from: require.resolve('picomatch/LICENSE'),
       to: 'dist/licenses',
       rename: 'LICENSE-picomatch',
+    }, {
+      from: require.resolve('exifr/LICENSE'),
+      to: 'dist/licenses',
+      rename: 'LICENSE-exifr',
     }],
+  },
+  {
+    entry: { 'metadata-worker': 'src/metadata/worker.ts' },
+    outDir: 'dist',
+    format: 'esm',
+    outExtensions: () => ({ js: '.mjs' }),
+    target: 'node20',
+    sourcemap: true,
+    deps: { alwaysBundle: bundledDependencies },
   },
   {
     entry: { 'compression-worker': 'src/compression/worker.ts' },

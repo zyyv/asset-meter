@@ -1,4 +1,5 @@
 import type { Logger } from './log'
+import type { MetadataService } from './metadata/service'
 import type { SizeService } from './service'
 import * as vscode from 'vscode'
 import { imageFormat } from './compression/image'
@@ -6,6 +7,8 @@ import { describeMetrics, inlineLabel } from './core/format'
 import { Limiter } from './core/limiter'
 import { ScanCancelled } from './core/scanner'
 import { silentLogger } from './log'
+import { imageDetailsMarkdown } from './metadata/markdown'
+import { hasMetadata, isPreviewImage, supportsMetadata } from './metadata/types'
 import { isSvg } from './svgPreview'
 
 export interface AssetTreeNode {
@@ -33,8 +36,10 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
   private readonly limiter = new Limiter(16)
   private readonly collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
   private disposed = false
+  private readonly metadataSubscription?: vscode.Disposable
+  private readonly nodes = new Map<string, AssetTreeNode>()
 
-  constructor(private readonly service: SizeService, private readonly log: Logger = silentLogger) {
+  constructor(private readonly service: SizeService, private readonly log: Logger = silentLogger, private readonly metadata?: MetadataService) {
     this.subscription = service.onDidChange((uris) => {
       for (const [key, entry] of this.directories) {
         const directory = vscode.Uri.parse(key)
@@ -43,7 +48,12 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
           this.directories.delete(key)
         }
       }
+      this.nodes.clear()
       this.changes.fire(undefined)
+    })
+    this.metadataSubscription = metadata?.onDidChange((uri) => {
+      const node = this.nodes.get(uri.toString())
+      if (node && !this.disposed) { this.changes.fire(node) }
     })
   }
 
@@ -64,6 +74,7 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
   }
 
   async getTreeItem(element: AssetTreeNode): Promise<vscode.TreeItem> {
+    this.nodes.set(element.uri.toString(), element)
     const state = !element.hasChildren
       ? vscode.TreeItemCollapsibleState.None
       : element.workspaceRoot ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed
@@ -73,35 +84,43 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
     // size decoration badge alongside this view's full description.
     item.resourceUri = element.uri.with({ scheme: 'asset-meter-tree' })
     item.iconPath = element.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File
-    item.contextValue = element.isDirectory ? 'assetMeter.folder' : imageFormat(element.uri.path) ? 'assetMeter.image' : 'assetMeter.file'
+    item.contextValue = element.isDirectory ? 'assetMeter.folder' : imageFormat(element.uri.path) ? 'assetMeter.image' : isPreviewImage(element.uri.path) ? 'assetMeter.previewImage' : 'assetMeter.file'
     if (!element.isDirectory) {
       item.command = { command: isSvg(element.uri) ? 'assetMeter.openSvg' : 'vscode.open', title: 'Open File', arguments: [element.uri] }
     }
     try {
       const metrics = await this.service.measure(element.uri)
       const settings = this.service.settings(element.uri)
-      item.description = inlineLabel(metrics, settings)
+      const metadata = this.metadata?.peek(element.uri)
+      item.description = `${hasMetadata(metadata) ? 'ⓘ · ' : ''}${inlineLabel(metrics, settings)}`
       const details = `Path: ${element.uri.path}\n${describeMetrics(metrics, settings)}`
       item.tooltip = details
-      if (!element.isDirectory && /\.(?:jpe?g|jpe|png|gif|webp|avif|svg|ico|bmp)$/i.test(element.uri.path)
-        && (element.uri.scheme === 'file' || element.uri.scheme === 'vscode-remote')) {
-        // Markdown strips max-width styles. A 300px layout table leaves room
-        // for hover padding; word breaks keep long paths from expanding it.
-        const tooltip = new vscode.MarkdownString(`<table width="300"><tr><td>\n\n![Image preview](<${element.uri.toString()}|width=280>)\n\n`)
-        tooltip.supportHtml = true
-        for (const [index, line] of details.split('\n').entries()) {
-          if (index) { tooltip.appendMarkdown('  \n') }
-          for (const character of line) { tooltip.appendText(character).appendMarkdown('<wbr>') }
-        }
-        tooltip.appendMarkdown('\n\n</td></tr></table>')
-        item.tooltip = tooltip
+      if (!element.isDirectory && isPreviewImage(element.uri.path)) {
+        // Leave tooltip unset while parsing so VS Code can lazily resolve it
+        // on hover. Size rows never await the metadata worker.
+        item.tooltip = this.metadata && supportsMetadata(element.uri.path) && !metadata
+          ? undefined
+          : imageDetailsMarkdown(element.uri, metrics, settings, metadata ?? { status: 'unsupported', groups: [] }, true)
+        if (this.metadata && !metadata) { void this.metadata.get(element.uri) }
       }
-      item.accessibilityInformation = { label: `${element.name}, ${item.description}` }
+      item.accessibilityInformation = { label: `${element.name}, ${hasMetadata(metadata) ? 'metadata available, ' : ''}${inlineLabel(metrics, settings)}` }
     }
     catch (error) {
       if (!(error instanceof ScanCancelled)) { this.log.warn(`Asset tree measurement failed: ${element.uri.toString()}`, error) }
       item.tooltip = `Path: ${element.uri.path}`
     }
+    return item
+  }
+
+  async resolveTreeItem(item: vscode.TreeItem, element: AssetTreeNode, token: vscode.CancellationToken): Promise<vscode.TreeItem> {
+    if (!this.metadata || element.isDirectory || token.isCancellationRequested) { return item }
+    const metadata = await this.metadata.get(element.uri)
+    if (this.disposed || token.isCancellationRequested) { return item }
+    try {
+      const metrics = await this.service.measure(element.uri)
+      if (!token.isCancellationRequested) { item.tooltip = imageDetailsMarkdown(element.uri, metrics, this.service.settings(element.uri), metadata, true) }
+    }
+    catch { /* A removed file should not interrupt the hover. */ }
     return item
   }
 
@@ -148,6 +167,8 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
   dispose(): void {
     this.disposed = true
     this.subscription.dispose()
+    this.metadataSubscription?.dispose()
+    this.nodes.clear()
     for (const entry of this.directories.values()) { entry.valid = false }
     this.directories.clear()
     this.changes.dispose()

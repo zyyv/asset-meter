@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { crc32 } from 'node:zlib'
 /* global setTimeout, fetch */
 import { chromium } from 'playwright'
 
@@ -62,7 +63,12 @@ try {
     }
   `)
   const hero = Buffer.alloc(1536)
-  Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64').copy(hero)
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')
+  const text = Buffer.from('Author\0Asset Meter UI')
+  const metadata = Buffer.alloc(text.length + 12)
+  metadata.writeUInt32BE(text.length); metadata.write('tEXt', 4); text.copy(metadata, 8)
+  metadata.writeUInt32BE(crc32(metadata.subarray(4, -4)), metadata.length - 4)
+  Buffer.concat([png.subarray(0, -12), metadata, png.subarray(-12)]).copy(hero)
   await writeFile(path.join(workspace, 'assets/images/hero.png'), hero)
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><circle cx="80" cy="80" r="64" fill="#f5b942"/></svg>'
   await writeFile(path.join(workspace, 'assets/logo.svg'), svg)
@@ -116,6 +122,19 @@ try {
   if (await explorerHeader.getAttribute('aria-expanded') === 'true') { await explorerHeader.click() }
   const name = value => view.locator('.label-name').filter({ hasText: new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) })
   const row = value => name(value).locator('xpath=ancestor::*[contains(@class,"monaco-list-row")][1]')
+  const hoverFile = async (filename, relativePath) => {
+    const hover = page.locator('.monaco-hover').filter({ hasText: path.join(workspace, relativePath) })
+    // Startup refreshes can replace a row after the pointer first enters it.
+    // Retry the interaction while keeping assertions on the final hover strict.
+    await waitFor(async () => {
+      await page.bringToFront()
+      await page.mouse.move(0, 0)
+      await name(filename).hover()
+      await hover.waitFor({ state: 'visible', timeout: 2000 })
+      return true
+    })
+    return hover
+  }
   const expand = async (value) => {
     if (await row(value).getAttribute('aria-expanded') !== 'true') { await row(value).locator('.monaco-tl-twistie').click() }
   }
@@ -125,7 +144,7 @@ try {
   await name('images').waitFor({ state: 'visible' })
   await expand('images')
   await name('hero.png').waitFor({ state: 'visible' })
-  assert.equal(await row('hero.png').locator('.label-description').textContent(), '1.5 KB', 'full sizes remain visible in hover display mode')
+  await waitFor(async () => (await row('hero.png').locator('.label-description').textContent()) === 'ⓘ · 1.5 KB')
   if (process.env.ASSET_METER_EXPECT_RIGHT_ALIGNED === '1') {
     const positions = []
     for (const value of ['assets', 'images', 'hero.png']) {
@@ -149,23 +168,42 @@ try {
     ['hero.png', 'assets/images/hero.png', '1.5 KB (1,536 bytes)'],
     ['logo.svg', 'assets/logo.svg', `${Buffer.byteLength(svg)} B (${Buffer.byteLength(svg)} bytes)`],
   ]) {
-    await name(filename).hover()
-    const hover = page.locator('.monaco-hover').filter({ hasText: `Path: ${path.join(workspace, relativePath)}` })
-    await hover.waitFor({ state: 'visible' })
+    const hover = await hoverFile(filename, relativePath)
     const preview = hover.getByRole('img', { name: 'Image preview', exact: true })
     await waitFor(async () => await preview.evaluate(element => element.complete && element.naturalWidth > 0))
     const text = (await hover.textContent() ?? '').replace(/\u00A0/g, ' ')
-    assert.ok(text.indexOf('Path:') < text.indexOf('Size:'), 'path precedes size')
-    assert.ok(text.includes(`Size: ${size}`), 'hover retains exact bytes')
+    const basicRows = await hover.locator('table').first().locator('tbody > tr').evaluateAll(elements => elements.filter(element => element.children.length === 4).map(element => ({ key: element.children[1].textContent.trim(), value: element.lastElementChild.textContent.trim() })))
+    assert.equal(basicRows[0].key, 'Path')
+    assert.equal(basicRows[0].value, path.join(workspace, relativePath))
+    assert.equal(basicRows[1].key, 'Size')
+    assert.equal(basicRows[1].value, size, 'hover retains exact bytes')
+    assert.equal(await hover.locator('table').first().locator('.codicon-file').count(), 1, 'Path uses the built-in file icon')
+    assert.equal(await hover.locator('table').first().locator('.codicon-database').count(), 1, 'Size uses the built-in database icon')
+    assert.equal(await hover.locator('pre, code, th').count(), 0, 'tooltip uses normal text without code fonts or table headers')
+    const typography = await hover.evaluate((element) => {
+      const base = getComputedStyle(element.querySelector('.rendered-markdown') ?? element).fontFamily
+      return [...element.querySelectorAll('td > span:not(.codicon), td > strong')].every(cell => getComputedStyle(cell).fontFamily === base)
+    })
+    assert.equal(typography, true, 'basic and metadata values inherit the normal tooltip font')
+    const borderless = await hover.locator('table, td').evaluateAll(elements => elements.every((element) => {
+      const style = getComputedStyle(element)
+      return [style.borderTopWidth, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth].every(width => Number.parseFloat(width) === 0)
+    }))
+    assert.equal(borderless, true, 'layout has no visible table borders or row separators')
+    if (filename === 'hero.png') {
+      assert.ok(text.includes('Asset Meter UI'), 'hover includes embedded metadata')
+      assert.equal(await hover.locator('strong').filter({ hasText: /^MetaData$/ }).count(), 1)
+    }
+    else { assert.equal(await hover.locator('strong').filter({ hasText: /^MetaData$/ }).count(), 0, 'images without metadata omit the section') }
     assert.equal(await preview.evaluate(element => Math.round(element.getBoundingClientRect().width)), 280)
     const layout = await hover.evaluate((element) => {
       const bounds = element.getBoundingClientRect()
-      const content = element.querySelector('table')
+      const content = element.querySelector('.rendered-markdown') ?? element
       return { width: bounds.width, overflow: content.scrollWidth > content.clientWidth }
     })
     assert.ok(layout.width <= 320, `hover stays within 320px, including long paths (actual: ${layout.width}px)`)
     assert.equal(layout.overflow, false, 'the complete path wraps without horizontal overflow')
-    const order = await hover.evaluate(element => element.querySelector('img').getBoundingClientRect().bottom <= element.querySelectorAll('p')[1].getBoundingClientRect().top)
+    const order = await hover.evaluate(element => element.querySelector('img').getBoundingClientRect().bottom <= element.querySelector('table').getBoundingClientRect().top)
     assert.ok(order, 'the image is above the details')
     await hover.screenshot({ path: path.join(root, `artifacts/asset-hover-${filename}.png`) })
     await page.keyboard.press('Escape')
@@ -176,7 +214,24 @@ try {
   await name('hero.png').click({ button: 'right' })
   await page.getByRole('menuitem', { name: /Compress Image/ }).waitFor({ state: 'visible' })
   await page.getByRole('menuitem', { name: /Reveal in Explorer/ }).waitFor({ state: 'visible' })
-  await page.keyboard.press('Escape')
+  if (process.platform === 'darwin') { await page.getByRole('menuitem', { name: /Reveal in Finder/ }).waitFor({ state: 'visible' }) }
+  await page.getByRole('menuitem', { name: /Open Image Details/ }).click()
+  const detailsFrame = await waitFor(async () => {
+    for (const frame of page.frames()) {
+      if ((await frame.locator('body').textContent())?.replaceAll('\u00A0', ' ').includes('Asset Meter UI')) { return frame }
+    }
+  })
+  const detailsImage = detailsFrame.getByRole('img', { name: 'Image preview', exact: true })
+  await waitFor(() => detailsImage.evaluate(image => image.complete && image.naturalWidth > 0))
+  assert.ok((await detailsFrame.locator('body').textContent()).includes('Metadata'))
+  assert.equal(await detailsFrame.getByRole('columnheader', { name: 'Field', exact: true }).count(), 1)
+  assert.equal(await detailsFrame.getByRole('columnheader').count(), 2, 'details table contains only Field and Value columns')
+  await detailsFrame.getByRole('cell', { name: 'Asset Meter UI', exact: true }).waitFor({ state: 'visible' })
+  await page.screenshot({ path: path.join(root, 'artifacts/image-metadata-preview.png') })
+  // Return to the tree before the existing SVG editor checks.
+  await page.keyboard.press(`${prefix}+k`)
+  await page.keyboard.press('w')
+  console.log('Metadata UI passed: indicator, hover and native Markdown preview show the same embedded Author field.')
   await writeFile(path.join(workspace, 'assets/added.png'), Buffer.alloc(64))
   await name('added.png').waitFor({ state: 'visible' })
   await rm(path.join(workspace, 'assets/added.png'))
@@ -251,6 +306,100 @@ try {
   assert.equal(await groups.count(), 2, 'native Explorer also opens source and image')
   console.log('SVG UI passed: default Both, live unsaved edits, Image / Code mode changes, uppercase SVGs, pane reuse and native Explorer clicks.')
   await explorerHeader.click()
+  // Exercise a camera photo as well as generic PNG text, without depending on
+  // personal photos or their metadata. The XMP APP1 segment uses EXIF names.
+  const jpeg = await readFile(path.join(root, 'test/fixtures/sample.jpg'))
+  const captured = new Date(2024, 1, 15, 19, 37, 34).toISOString()
+  const xmp = Buffer.from(`http://ns.adobe.com/xap/1.0/\0<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:tiff="http://ns.adobe.com/tiff/1.0/" xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" tiff:Make="SONY" tiff:Model="ILCE-6700" tiff:ImageWidth="6192" tiff:ImageHeight="4128" tiff:Orientation="1" tiff:Software="ILCE-6700 v1.01" exif:LensModel="18-50mm F2.8 DC DN | Contemporary 021" exif:ExposureTime="0.03333333333333333" exif:FNumber="2.8" exif:ISO="5000" exif:FocalLength="18" exif:FocalLengthIn35mmFormat="27" exif:DateTimeOriginal="${captured}" exif:ColorSpace="1" exif:Flash="16" exif:WhiteBalance="1" xmp:Rating="0"/></rdf:RDF></x:xmpmeta>`)
+  const segment = Buffer.alloc(xmp.length + 4)
+  segment.writeUInt16BE(0xFFE1); segment.writeUInt16BE(xmp.length + 2, 2); xmp.copy(segment, 4)
+  await writeFile(path.join(workspace, 'assets/camera.jpg'), Buffer.concat([jpeg.subarray(0, 2), segment, jpeg.subarray(2)]))
+  settings['assetMeter.include'] = ['**/*.{png,svg,jpg}', '**/assets']
+  await writeFile(settingsFile, JSON.stringify(settings))
+  await waitFor(async () => { await expand('assets'); return name('camera.jpg').isVisible() })
+  await waitFor(async () => (await row('camera.jpg').locator('.label-description').textContent()).startsWith('ⓘ'))
+  const photoHover = await hoverFile('camera.jpg', 'assets/camera.jpg')
+  await photoHover.evaluate(() => document.fonts.ready.then(() => true))
+  const photoText = (await photoHover.textContent()).replaceAll('\u00A0', ' ')
+  assert.ok(photoText.includes('SONY ILCE-6700'))
+  const photoRows = await photoHover.locator('table > tbody > tr').evaluateAll(elements => elements.filter(element => element.children.length === 4).map((element) => {
+    const label = element.children[1].querySelector('span')
+    const value = element.lastElementChild.querySelector('span, strong')
+    const icon = element.firstElementChild.querySelector('.codicon')
+    const range = document.createRange()
+    range.selectNodeContents(label)
+    const left = range.getBoundingClientRect()
+    const labelBox = label.getBoundingClientRect()
+    const right = value.getBoundingClientRect()
+    const iconBox = icon?.getBoundingClientRect()
+    const baseline = (node) => {
+      const marker = document.createElement('span')
+      Object.assign(marker.style, { display: 'inline-block', width: '0', height: '0', verticalAlign: 'baseline' })
+      const text = document.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode()
+      if (text) { text.parentNode.insertBefore(marker, text) }
+      else { node.append(marker) }
+      const result = marker.getBoundingClientRect().top
+      marker.remove()
+      return result
+    }
+    const context = document.createElement('canvas').getContext('2d')
+    const inkCenter = (node, text) => {
+      const style = getComputedStyle(node)
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+      const metrics = context.measureText(text)
+      return baseline(node) + (metrics.actualBoundingBoxDescent - metrics.actualBoundingBoxAscent) / 2
+    }
+    const glyph = icon && getComputedStyle(icon, '::before').content
+    const opticalOffset = icon && Math.abs(inkCenter(icon, JSON.parse(glyph)) - inkCenter(label, label.textContent))
+    return { label: label.textContent.trim(), value: value.textContent.trim(), left: left.left, right: right.right, gap: right.left - left.right, top: left.top, bottom: Math.max(left.bottom, right.bottom), baselineOffset: Math.abs(baseline(label) - baseline(value)), keyColor: getComputedStyle(label).color, valueColor: getComputedStyle(value).color, iconColor: icon && getComputedStyle(icon).color, iconWidth: iconBox?.width, iconGap: iconBox && labelBox.left - iconBox.right, opticalOffset, glyph }
+  }))
+  const photoValues = new Map(photoRows.map(row => [row.label, row.value]))
+  assert.equal(photoValues.get('Shutter'), '1/30 s')
+  assert.equal(photoValues.get('Aperture'), 'f/2.8')
+  assert.equal(photoValues.get('ISO'), '5000')
+  assert.equal(photoValues.get('Focal length'), '18 mm')
+  assert.equal(photoValues.get('35mm equiv.'), '27 mm')
+  assert.equal(photoValues.get('Date'), '2024-02-15')
+  assert.equal(photoValues.get('Time'), '19:37:34')
+  assert.equal(photoValues.get('Image'), '6,192 × 4,128 px')
+  assert.equal(photoValues.get('Resolution'), '25.6 MP')
+  assert.ok(Math.max(...photoRows.map(row => row.left)) - Math.min(...photoRows.map(row => row.left)) <= 1, 'metadata keys share a left edge')
+  assert.ok(Math.max(...photoRows.map(row => row.right)) - Math.min(...photoRows.map(row => row.right)) <= 1, 'metadata values share a right edge')
+  assert.ok(photoRows.every(row => row.gap >= 12), 'key/value rows keep a visible gap')
+  assert.ok(photoRows.every(row => row.baselineOffset <= 0.25), `keys and values share the actual first text baseline: ${JSON.stringify(photoRows.map(row => [row.label, row.baselineOffset]))}`)
+  for (const label of ['Shutter', 'Date', 'White balance']) {
+    const index = photoRows.findIndex(row => row.label === label)
+    assert.ok(index > 0 && photoRows[index].top - photoRows[index - 1].bottom >= 19, `${label} starts a group after one blank line`)
+  }
+  assert.ok(photoRows.every(row => row.keyColor !== row.valueColor), 'basic and metadata keys keep their muted color')
+  assert.ok(photoRows.every(row => row.iconWidth > 0 && row.glyph && !['none', 'normal', '""'].includes(row.glyph)), 'every key has a rendered built-in icon')
+  assert.ok(photoRows.every(row => Math.abs(row.iconGap - 4) <= 0.5), 'icons and keys keep a 4px gap')
+  // Font outlines and DOM coordinates round differently within one layout subpixel.
+  assert.ok(photoRows.every(row => row.opticalOffset <= 1.25 + 1 / 64), `icon glyphs align optically with key text: ${JSON.stringify(photoRows.map(row => [row.label, row.opticalOffset]))}`)
+  assert.equal(await photoHover.locator('table table').count(), 0, 'nested tables cannot introduce independent text baselines')
+  assert.ok(photoRows.every(row => row.iconColor === row.keyColor), 'icons share the muted key color')
+  assert.equal(await photoHover.locator('.codicon-device-camera').count(), 1)
+  assert.equal(await photoHover.locator('.codicon-calendar').count(), 1)
+  assert.equal(await photoHover.locator('.codicon-clock').count(), 1)
+  assert.doesNotMatch(photoText, /Rating: 0|ExifImageWidth|ExposureTime|0\.033333|Software:|Orientation:/)
+  assert.equal(await photoHover.locator('pre, code, th').count(), 0)
+  assert.equal(await photoHover.locator('strong').filter({ hasText: '1/30 s' }).count(), 1)
+  assert.ok(await photoHover.evaluate(element => element.getBoundingClientRect().width <= 320))
+  const photoTitle = photoHover.locator('strong').filter({ hasText: /^MetaData$/ })
+  const titlePosition = await photoTitle.evaluate(element => ({ title: element.getBoundingClientRect().toJSON(), row: element.parentElement.getBoundingClientRect().toJSON(), text: element.parentElement.textContent }))
+  assert.match(titlePosition.text.replaceAll('\u00A0', ' '), /-------- {3}MetaData {3}--------/)
+  assert.ok(Math.abs(titlePosition.title.x + titlePosition.title.width / 2 - titlePosition.row.x - titlePosition.row.width / 2) <= 1, 'MetaData is centered between its dashed separators')
+  await photoHover.locator('table').first().evaluate(element => element.scrollIntoView({ block: 'start' }))
+  await photoHover.screenshot({ path: path.join(root, 'artifacts/asset-hover-camera-details.png') })
+  await photoTitle.evaluate(element => element.scrollIntoView({ block: 'start' }))
+  await photoHover.screenshot({ path: path.join(root, 'artifacts/asset-hover-camera.jpg.png') })
+  const metadataBounds = await photoTitle.boundingBox()
+  const hoverBounds = await photoHover.boundingBox()
+  const metadataTop = metadataBounds.y - 8
+  await page.screenshot({ path: path.join(root, 'artifacts/asset-hover-camera-metadata.png'), clip: { x: hoverBounds.x, y: metadataTop, width: hoverBounds.width, height: hoverBounds.y + hoverBounds.height - metadataTop } })
+  await page.keyboard.press('Escape')
+  await page.mouse.move(0, 0)
+  console.log('Camera metadata UI passed: clear hierarchy, compact exposure, formatted dimensions/date and no default or duplicate rows.')
   settings['assetMeter.include'] = []
   await writeFile(settingsFile, JSON.stringify(settings))
   await view.getByText('No matching files or folders.', { exact: false }).waitFor({ state: 'visible' })

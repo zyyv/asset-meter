@@ -1,10 +1,13 @@
 import type { AssetTreeNode } from './assetTree'
 import type { CompressionPlugin } from './compression/plugins'
 import type { Metrics } from './core/types'
+import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { assetResource, AssetTreeProvider } from './assetTree'
 import { ImageCompression } from './compression/preview'
 import { SizeDecorationProvider } from './decorations'
+import { ImageDetailsPreview } from './metadata/preview'
+import { MetadataService } from './metadata/service'
 import { getNativePatchStatus, installNativePatch, restoreNativePatch } from './nativePatch'
 import { SizeService } from './service'
 import { SvgPreview } from './svgPreview'
@@ -22,7 +25,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   context.subscriptions.push(output)
   output.info(`Activating ${context.extension.id} ${context.extension.packageJSON.version}; VS Code ${vscode.version}`, JSON.stringify({ appRoot: vscode.env.appRoot, remoteName: vscode.env.remoteName }))
   const service = new SizeService(output)
-  const assetTree = new AssetTreeProvider(service, output)
+  const metadata = new MetadataService(service, join(context.extensionPath, 'dist'), output)
+  const imageDetails = new ImageDetailsPreview(service, metadata)
+  const assetTree = new AssetTreeProvider(service, output, metadata)
   const assetView = vscode.window.createTreeView('assetMeter.explorer', { treeDataProvider: assetTree, showCollapseAll: true })
   const refresh = (uris: readonly vscode.Uri[]) => {
     void service.refresh(uris).catch(error => output.error('Failed to refresh sizes.', error))
@@ -57,6 +62,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     if (uris.length) { refresh(uris) }
   }
   const queue = (uri: vscode.Uri) => {
+    metadata.invalidate([uri])
     if (service.isExcluded(uri)) { return }
     pending.set(uri.toString(), uri)
     if (timer) { return }
@@ -83,16 +89,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   watchWorkspace()
   context.subscriptions.push(
     service,
+    metadata,
+    imageDetails,
     assetTree,
     assetView,
     decorations,
     compression,
     svgPreview,
     vscode.commands.registerCommand('assetMeter.openSvg', (uri: vscode.Uri) => svgPreview.open(uri)),
+    vscode.commands.registerCommand('assetMeter.previewImage', (resource?: vscode.Uri | AssetTreeNode) => imageDetails.open(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.compressImage', (resource?: vscode.Uri | AssetTreeNode) => compression.compress(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.revealInExplorer', (resource?: vscode.Uri | AssetTreeNode) => {
       const uri = assetResource(resource)
       if (uri) { return vscode.commands.executeCommand('revealInExplorer', uri) }
+    }),
+    vscode.commands.registerCommand('assetMeter.revealInFinder', (resource?: vscode.Uri | AssetTreeNode) => {
+      const uri = assetResource(resource)
+      if (uri?.scheme === 'file') { return vscode.commands.executeCommand('revealFileInOS', uri) }
+      if (uri) { void vscode.window.showInformationMessage('Finder can only reveal files stored on this Mac.') }
     }),
     vscode.window.registerFileDecorationProvider(decorations),
     new vscode.Disposable(() => { for (const watcher of watchers.values()) { watcher.dispose() } watchers.clear() }),
