@@ -52,7 +52,9 @@ Explorer 中的 **Asset Meter** 面板按 `assetMeter.include` / `assetMeter.exc
 
 检测到图片包含 metadata 时，Asset Meter 面板会在统计左侧显示 **`ⓘ`**。悬停可查看 EXIF、GPS、XMP、IPTC、ICC 或 PNG 文本等信息；在原 Explorer 或此面板右键选择 **Asset Meter: Open Image Details**，会打开原生 Markdown 预览，上方为图片，下方为路径、体积和 metadata。悬停以居中的 `--------   MetaData   --------` 分隔基础信息，下面按相机与镜头、拍摄参数、时间与尺寸组织 key/value 行，Path、Size 和 metadata 统一使用普通 tooltip 字体和无边框双列布局，灰色 key 靠左、亮色 value 靠右并保留间距，多行 value 与 key 首行对齐；metadata 分组之间只留一个空行。每个 key 前保留灰色的内置 Codicons 图标和 4px 间距，key 与 value 使用统一行布局，共享首行文字基线，无需额外图标依赖或图片下载。日期、像素、焦距、颜色与 GPS 值自动格式化，省略未评级、默认方向、固件和重复时间。详情窗口使用同一份格式化结果，保留「字段 / 值」两列表格；没有有效数据时隐藏整个 Metadata 区域。EXIF 保留常用拍摄信息，过滤版本号、内部结构、校准数据和二进制块，重复字段只展示一次。不支持的格式仍可查看基本信息，图像能否显示取决于编辑器的格式支持。
 
-Metadata 通过 `exifr` 在独立 Worker 中按需异步解析，不阻塞体积统计；悬停与 Markdown 预览共享最多 256 个资源的 LRU 缓存，并合并同一文件的并发请求。无 metadata 和解析失败的结果也会缓存，修改、删除、重命名或手动刷新后失效。Worker 串行处理任务，10 秒超时，空闲 15 秒释放；本地文件按段读取，远程或虚拟文件最大读取 32 MiB。PNG / WebP 的 metadata 段最多读取 8 MiB，过大的字段会截断，悬停展示拍摄摘要和最多 4 个补充字段，完整预览使用同一份已缓存数据。
+Metadata 通过 `exifr` 在独立 Worker 中按需异步解析，不阻塞体积统计；悬停与 Markdown 预览共享最多 256 个资源的 LRU 缓存，并合并同一文件的并发请求。无 metadata 和解析失败的结果也会缓存，修改、删除、重命名或手动刷新后失效。Worker 串行处理任务，10 秒超时，空闲 15 秒释放；本地文件按段读取，远程或虚拟文件最大读取 32 MiB。PNG / WebP 的 metadata 段最多读取 8 MiB，PNG 解压后的数据也累计限制为 8 MiB，过大的字段会截断，悬停展示拍摄摘要和最多 4 个补充字段，完整预览使用同一份已缓存数据。
+
+模块职责、扩展位置与性能约束见 [Metadata 模块说明](src/metadata/README.md)。
 
 面板工具栏提供 **刷新、全部折叠、设置**。文件保存、创建、删除、重命名和规则变更会自动刷新。右键资源可在原 Explorer 中定位、诊断匹配规则；macOS 本地工作区还可选择 **Asset Meter: Reveal in Finder**，打开所在目录并选中资源。JPEG / PNG / WebP 可直接进入现有压缩流程。没有匹配项时提供设置入口。
 

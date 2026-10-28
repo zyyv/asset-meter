@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { formatMetadataValue, metadataPresentation } from '../src/metadata/presentation'
-import { normalizeMetadata } from '../src/metadata/types'
+import { normalizeMetadata } from '../src/metadata/normalize'
+import { metadataPresentation } from '../src/metadata/presentation'
+import { formatMetadataValue } from '../src/metadata/presentation/format'
 
 it('formats exposure and optical values with photographic units instead of floating-point noise', () => {
   assert.equal(formatMetadataValue('ExposureTime', '0.03333333333333333'), '1/30 s')
@@ -75,4 +76,9 @@ it('preserves custom text, handles missing photo fields and avoids zero-megapixe
   assert.equal(formatMetadataValue('ExposureTime', 'invalid'), 'invalid')
   assert.equal(formatMetadataValue('DateTimeOriginal', 'invalid'), 'invalid')
   assert.equal(formatMetadataValue('DateTimeOriginal', '2024:02:15 19:37:34'), '2024-02-15 19:37:34')
+})
+
+it('does not regroup custom text fields that share names with generated image summary rows', () => {
+  const result = metadataPresentation(normalizeMetadata({ pngText: { Date: 'custom date', Time: 'custom time', Image: 'custom image', Resolution: 'custom resolution' } }))
+  assert.deepEqual(result.rows.map(row => row.section), ['details', 'details', 'details', 'details'])
 })

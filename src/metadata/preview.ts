@@ -3,8 +3,9 @@ import type { MetadataService } from './service'
 import { Buffer } from 'node:buffer'
 import { posix } from 'node:path'
 import * as vscode from 'vscode'
-import { imageDetailsMarkdown } from './markdown'
-import { isPreviewImage } from './types'
+import { isSameOrChild } from '../core/uri'
+import { isPreviewImage, previewImageExtensions } from './formats'
+import { imageDetailsMarkdown } from './rendering/markdown'
 
 export const detailsScheme = 'asset-meter-details'
 
@@ -72,8 +73,7 @@ export class ImageDetailsPreview implements vscode.Disposable {
       for (const document of vscode.workspace.textDocuments) {
         if (document.uri.scheme !== detailsScheme) { continue }
         const source = this.source(document.uri)
-        if (!uris || uris.some(uri => uri.scheme === source.scheme && uri.authority === source.authority
-          && (source.path === uri.path || source.path.startsWith(`${uri.path.replace(/\/$/, '')}/`)))) {
+        if (!uris || uris.some(uri => isSameOrChild(source, uri))) {
           this.images.change(document.uri)
         }
       }
@@ -95,7 +95,7 @@ export class ImageDetailsPreview implements vscode.Disposable {
     try {
       const [metrics, metadata] = await Promise.all([this.service.measure(source), this.metadata.get(source)])
       const image = this.images.reference(source).toString().replace(`${detailsScheme}:`, '')
-      return imageDetailsMarkdown(source, metrics, this.service.settings(source), metadata, false, image).value
+      return imageDetailsMarkdown(source, metrics, this.service.settings(source), metadata, { view: 'details', imageHref: image }).value
     }
     catch {
       return new vscode.MarkdownString().appendMarkdown('### Image unavailable\n\n').appendText(`The file may have been moved, deleted or become unreadable: ${source.path}`).value
@@ -105,7 +105,7 @@ export class ImageDetailsPreview implements vscode.Disposable {
   async open(resource?: vscode.Uri): Promise<void> {
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
     const uri = resource ?? (input instanceof vscode.TabInputCustom || input instanceof vscode.TabInputText ? input.uri : undefined)
-      ?? (await vscode.window.showOpenDialog({ title: 'Asset Meter: Select an image', canSelectMany: false, filters: { Images: ['jpg', 'jpeg', 'jpe', 'png', 'webp', 'gif', 'avif', 'svg', 'ico', 'bmp', 'tif', 'tiff', 'heic', 'heif', 'iiq'] } }))?.[0]
+      ?? (await vscode.window.showOpenDialog({ title: 'Asset Meter: Select an image', canSelectMany: false, filters: { Images: previewImageExtensions } }))?.[0]
     if (!uri) { return }
     if (!isPreviewImage(uri.path)) { void vscode.window.showWarningMessage('Select an image to preview its details.'); return }
     const preview = this.uriFor(uri)

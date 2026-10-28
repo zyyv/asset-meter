@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { it } from 'vitest'
+import { hasMetadata, normalizeMetadata } from '../src/metadata/normalize'
 import { parseMetadata } from '../src/metadata/parser'
 import { MetadataWorker } from '../src/metadata/runner'
-import { hasMetadata, normalizeMetadata } from '../src/metadata/types'
 
 const fixture = (name: string) => readFile(path.join(__dirname, 'fixtures', name))
 const tiff = Buffer.from('49492a0008000000010012010300010000000600000000000000', 'hex')
@@ -67,6 +67,9 @@ it('reads PNG text after image data, compressed and international text, XMP and 
   assert.deepEqual(text, [{ name: 'Author', value: 'Asset Meter' }, { name: 'Comment', value: 'Compressed metadata' }, { name: 'Description', value: '中文说明' }])
   assert.ok(result.groups.some(group => group.name === 'ifd0'))
   assert.ok(JSON.stringify(result).includes('Shared metadata'))
+  const padded = Buffer.concat([Buffer.alloc(17, 0xAA), image, Buffer.alloc(11, 0xBB)])
+  const view = new Uint8Array(padded.buffer, padded.byteOffset + 17, image.byteLength)
+  assert.deepEqual(await parseMetadata(view), result, 'zero-copy reads honor the input view offset and length')
 })
 
 it('extracts WebP EXIF and XMP from RIFF chunks, skipping pixel data', async () => {
@@ -105,4 +108,17 @@ it('terminates an active metadata worker on disposal', async () => {
   const pending = reader.parse(await fixture('sample.jpg'))
   reader.dispose()
   await assert.rejects(pending, /cancelled/)
+})
+
+it('bounds the combined expanded size of separate compressed PNG metadata chunks', async () => {
+  const png = await fixture('sample.png')
+  const compressed = (name: string, size: number) => pngChunk('zTXt', Buffer.concat([Buffer.from(`${name}\0\0`), deflateSync(Buffer.alloc(size, 65))]))
+  const image = Buffer.concat([
+    png.subarray(0, -12),
+    compressed('First', 5 * 1024 * 1024),
+    compressed('Second', 4 * 1024 * 1024),
+    png.subarray(-12),
+  ])
+  assert.ok(image.byteLength - png.byteLength < 100_000, 'the compressed metadata alone does not reveal its expanded cost')
+  await assert.rejects(parseMetadata(image), /8 MiB parsing limit/)
 })

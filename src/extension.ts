@@ -1,14 +1,15 @@
-import type { AssetTreeNode } from './assetTree'
 import type { CompressionPlugin } from './compression/plugins'
 import type { Metrics } from './core/types'
+import type { AssetResource } from './resourceActions'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
-import { assetResource, AssetTreeProvider } from './assetTree'
+import { AssetTreeProvider } from './assetTree'
 import { ImageCompression } from './compression/preview'
 import { SizeDecorationProvider } from './decorations'
 import { ImageDetailsPreview } from './metadata/preview'
 import { MetadataService } from './metadata/service'
 import { getNativePatchStatus, installNativePatch, restoreNativePatch } from './nativePatch'
+import { assetResource, registerResourceActions } from './resourceActions'
 import { SizeService } from './service'
 import { SvgPreview } from './svgPreview'
 
@@ -96,17 +97,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     decorations,
     compression,
     svgPreview,
-    vscode.commands.registerCommand('assetMeter.openSvg', (uri: vscode.Uri) => svgPreview.open(uri)),
-    vscode.commands.registerCommand('assetMeter.previewImage', (resource?: vscode.Uri | AssetTreeNode) => imageDetails.open(assetResource(resource))),
-    vscode.commands.registerCommand('assetMeter.compressImage', (resource?: vscode.Uri | AssetTreeNode) => compression.compress(assetResource(resource))),
-    vscode.commands.registerCommand('assetMeter.revealInExplorer', (resource?: vscode.Uri | AssetTreeNode) => {
-      const uri = assetResource(resource)
-      if (uri) { return vscode.commands.executeCommand('revealInExplorer', uri) }
-    }),
-    vscode.commands.registerCommand('assetMeter.revealInFinder', (resource?: vscode.Uri | AssetTreeNode) => {
-      const uri = assetResource(resource)
-      if (uri?.scheme === 'file') { return vscode.commands.executeCommand('revealFileInOS', uri) }
-      if (uri) { void vscode.window.showInformationMessage('Finder can only reveal files stored on this Mac.') }
+    registerResourceActions({
+      openSvg: uri => svgPreview.open(uri),
+      previewImage: uri => imageDetails.open(uri),
+      compressImage: uri => compression.compress(uri),
     }),
     vscode.window.registerFileDecorationProvider(decorations),
     new vscode.Disposable(() => { for (const watcher of watchers.values()) { watcher.dispose() } watchers.clear() }),
@@ -124,7 +118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     vscode.workspace.onDidChangeWorkspaceFolders(() => { watchWorkspace(); service.invalidate(undefined, true) }),
     vscode.commands.registerCommand('assetMeter.refresh', () => { output.info('Manual size refresh requested.'); service.invalidate() }),
     vscode.commands.registerCommand('assetMeter.showOutput', () => { output.show(true) }),
-    vscode.commands.registerCommand('assetMeter.diagnose', async (resource?: vscode.Uri | AssetTreeNode) => {
+    vscode.commands.registerCommand('assetMeter.diagnose', async (resource?: AssetResource) => {
       output.show(true)
       const uri = assetResource(resource) ?? vscode.window.activeTextEditor?.document.uri ?? (await vscode.window.showOpenDialog({
         title: 'Asset Meter: Select a file or folder to diagnose',

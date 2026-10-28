@@ -1,122 +1,31 @@
-import type { FileStat, Metrics } from '../src/core/types'
+import type { Metrics } from '../src/core/types'
 import assert from 'node:assert/strict'
 import { beforeEach, it, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { assetResource, AssetTreeProvider } from '../src/assetTree'
+import { AssetTreeProvider } from '../src/assetTree'
 import { SizeDecorationProvider } from '../src/decorations'
-import { ImageDetailsPreview } from '../src/metadata/preview'
-import { MetadataService } from '../src/metadata/service'
-import { normalizeMetadata } from '../src/metadata/types'
+import { assetResource } from '../src/resourceActions'
+
 import { SizeService } from '../src/service'
+import { resetWorkspace, state, workspaceUris } from './support/workspace'
 
-const state = vi.hoisted(() => ({
-  entries: new Map<string, FileStat>(),
-  config: {} as Record<string, unknown>,
-  workspaceRoot: 'file:///workspace',
-  workspaceRoots: undefined as string[] | undefined,
-  beforeStat: undefined as ((key: string) => Promise<void>) | undefined,
-  beforeRead: undefined as ((key: string) => Promise<void>) | undefined,
-}))
+vi.mock('vscode', async () => (await import('./support/workspace')).createVscodeMock())
+const { assets, logo, token } = workspaceUris(vscode)
+beforeEach(() => resetWorkspace(vscode))
 
-vi.mock('vscode', async () => {
-  const { posix } = await import('node:path')
-  class Uri {
-    constructor(private readonly url: URL) {}
-    static parse(key: string) { return new Uri(new URL(key)) }
-    static from(parts: { scheme: string, path: string, query: string }) {
-      return Uri.parse(`${parts.scheme}:${parts.path}?${encodeURIComponent(parts.query)}`)
-    }
-
-    static joinPath(uri: Uri, ...parts: string[]) {
-      const url = new URL(uri.toString())
-      url.pathname = posix.join(url.pathname, ...parts)
-      return new Uri(url)
-    }
-
-    get scheme() { return this.url.protocol.slice(0, -1) }
-    get authority() { return this.url.host }
-    get path() { return decodeURIComponent(this.url.pathname) }
-    get fsPath() { return this.path }
-    get query() { return decodeURIComponent(this.url.search.slice(1)) }
-    with(change: { scheme?: string }) {
-      return Uri.parse(change.scheme ? this.toString().replace(/^[^:]+:/, `${change.scheme}:`) : this.toString())
-    }
-
-    toString() { return this.url.toString() }
+it('keeps newline-containing image paths in the Path field without inventing extra labels', async () => {
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  const uri = vscode.Uri.parse('file:///workspace/assets/line%0Aname%3Ab.png')
+  state.entries.set(uri.toString(), { type: 1, size: 10 })
+  try {
+    const item = await tree.getTreeItem({ uri, name: 'line\nname:b.png', isDirectory: false, hasChildren: false })
+    assert.ok(item.tooltip instanceof vscode.MarkdownString)
+    assert.ok(item.tooltip.value.replaceAll('<wbr>', '').includes('line<br>name:b.png'))
+    assert.ok(item.tooltip.value.includes('10 B (10 bytes)'))
+    assert.ok(!item.tooltip.value.includes('MetaData'))
   }
-  class EventEmitter<T> {
-    private readonly listeners = new Set<(value: T) => void>()
-    readonly event = (listener: (value: T) => void) => {
-      this.listeners.add(listener)
-      return { dispose: () => this.listeners.delete(listener) }
-    }
-
-    fire(value: T) { for (const listener of this.listeners) { listener(value) } }
-    dispose() { this.listeners.clear() }
-  }
-  return {
-    Uri,
-    EventEmitter,
-    MarkdownString: class {
-      constructor(public value = '') {}
-      appendText(value: string) {
-        this.value += value.replace(/([\\`*_{}[\]()#+\-.!<>])/g, '\\$1').replace(/\n/g, '  \n')
-        return this
-      }
-
-      appendMarkdown(value: string) { this.value += value; return this }
-    },
-    TreeItem: class {
-      constructor(public label: string, public collapsibleState: number) {}
-    },
-    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-    ThemeIcon: { File: { id: 'file' }, Folder: { id: 'folder' } },
-    FileType: { File: 1, Directory: 2, SymbolicLink: 64 },
-    workspace: {
-      get workspaceFolders() {
-        return (state.workspaceRoots ?? [state.workspaceRoot]).map((root, index) => ({ uri: Uri.parse(root), name: posix.basename(Uri.parse(root).path), index }))
-      },
-      getWorkspaceFolder: (uri: Uri) => {
-        const root = (state.workspaceRoots ?? [state.workspaceRoot]).map(key => Uri.parse(key)).sort((a, b) => b.path.length - a.path.length).find(root => uri.toString() === root.toString() || uri.toString().startsWith(`${root}/`))
-        return root ? { uri: root } : undefined
-      },
-      getConfiguration: vi.fn(() => ({ get: (key: string, fallback: unknown) => state.config[key] ?? fallback })),
-      textDocuments: [],
-      registerTextDocumentContentProvider: vi.fn(() => ({ dispose() {} })),
-      registerFileSystemProvider: vi.fn(() => ({ dispose() {} })),
-      fs: {
-        readFile: vi.fn(async () => new Uint8Array([1, 2, 3])),
-        stat: vi.fn(async (uri: Uri) => {
-          await state.beforeStat?.(uri.toString())
-          const entry = state.entries.get(uri.toString())
-          if (!entry) { throw Object.assign(new Error('Not found'), { code: 'FileNotFound' }) }
-          return { ...entry }
-        }),
-        readDirectory: vi.fn(async (uri: Uri) => {
-          await state.beforeRead?.(uri.toString())
-          return [...state.entries]
-            .filter(([key]) => key !== uri.toString() && key.startsWith(`${uri.toString().replace(/\/$/, '')}/`) && posix.dirname(Uri.parse(key).path) === uri.path)
-            .map(([key, stat]) => [posix.basename(Uri.parse(key).path), stat.type])
-        }),
-      },
-    },
-  }
-})
-
-const assets = vscode.Uri.parse('file:///workspace/assets')
-const logo = vscode.Uri.joinPath(assets, 'logo.png')
-const token = { isCancellationRequested: false } as vscode.CancellationToken
-
-beforeEach(() => {
-  vi.clearAllMocks()
-  state.beforeStat = undefined
-  state.beforeRead = undefined
-  state.workspaceRoots = undefined
-  state.workspaceRoot = 'file:///workspace'
-  state.config = { include: ['**/*.png', '**/assets'], exclude: ['**/node_modules/**'] }
-  state.entries.clear()
-  state.entries.set(assets.toString(), { type: vscode.FileType.Directory, size: 0 })
-  state.entries.set(logo.toString(), { type: vscode.FileType.File, size: 10 })
+  finally { tree.dispose(); service.dispose() }
 })
 
 it('path matching is synchronous and performs no filesystem reads', () => {
@@ -616,123 +525,4 @@ it('asset tree discards invalidated pending reads and retries unreadable branche
     assert.deepEqual(await tree.getChildren(), [])
   }
   finally { tree.dispose(); service.dispose() }
-})
-
-it('metadata never delays statistics and hover plus Markdown preview share one cached parse', async () => {
-  const service = new SizeService()
-  let release: () => void = () => {}
-  let started: () => void = () => {}
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  const entered = new Promise<void>((resolve) => { started = resolve })
-  const result = normalizeMetadata({ exif: { Model: 'Shared camera', UserComment: '<script>alert(1)</script> [link](command:evil)' } })
-  const reader = { parse: vi.fn(async () => { started(); await gate; return result }), dispose: vi.fn() }
-  const metadata = new MetadataService(service, '', undefined, reader)
-  const tree = new AssetTreeProvider(service, undefined, metadata)
-  const preview = new ImageDetailsPreview(service, metadata)
-  const changed = vi.fn()
-  tree.onDidChangeTreeData(changed)
-  const node = { uri: logo, name: 'logo.png', isDirectory: false, hasChildren: false }
-  try {
-    const item = await tree.getTreeItem(node)
-    assert.equal(item.description, '10 B', 'statistics return before the parser finishes')
-    assert.equal(item.tooltip, undefined, 'VS Code can lazily resolve the pending hover')
-    await entered
-    const first = metadata.get(logo)
-    assert.equal(metadata.get(logo), first, 'in-flight requests share one promise')
-    const hover = tree.resolveTreeItem(item, node, token)
-    assert.equal((await service.measure(assets)).bytes, 10, 'metadata does not block the scanner')
-    release()
-    assert.equal(await first, result)
-    const resolved = await hover
-    assert.ok(resolved.tooltip instanceof vscode.MarkdownString)
-    assert.match(resolved.tooltip.value.replace(/<(?:wbr|br)>/g, ''), /Shared camera/)
-    assert.ok(!resolved.tooltip.value.includes('<script>'))
-    assert.equal(resolved.tooltip.isTrusted, false)
-    assert.equal((await tree.getTreeItem(node)).description, 'ⓘ · 10 B')
-    const documentUri = preview.uriFor(logo)
-    assert.equal(documentUri.query, '', 'webview resource roots must have the same empty query as image requests')
-    const content = await preview.provideTextDocumentContent(documentUri)
-    assert.match(content, /Shared camera/)
-    assert.ok(content.indexOf('![Image preview]') < content.indexOf('Path:'))
-    assert.ok(content.indexOf('Path:') < content.indexOf('### Metadata'))
-    const image = /!\[Image preview\]\(<([^>]+)>\)/.exec(content)?.[1]
-    assert.ok(image?.includes('/image/'), 'native Markdown uses a relative image on the virtual filesystem')
-    const provider = vi.mocked(vscode.workspace.registerFileSystemProvider).mock.calls.at(-1)?.[1]
-    assert.ok(provider)
-    const imageUri = vscode.Uri.parse(`asset-meter-details:${image}`)
-    assert.ok(imageUri.path.startsWith(`${documentUri.path.slice(0, documentUri.path.lastIndexOf('/'))}/`), 'image stays inside the Markdown preview resource root')
-    assert.equal(new TextDecoder().decode(await provider.readFile(documentUri)), content)
-    assert.equal((await provider.stat(documentUri)).size, Buffer.byteLength(content))
-    await provider.readFile(imageUri)
-    assert.equal(vi.mocked(vscode.workspace.fs.readFile).mock.calls.at(-1)?.[0].toString(), logo.toString())
-    assert.equal(reader.parse.mock.calls.length, 1, 'opening the full preview does not reparse the image')
-    assert.equal(changed.mock.calls.length, 1)
-    assert.equal(changed.mock.calls[0]?.[0], node, 'only the parsed resource row refreshes')
-    metadata.dispose()
-    assert.equal(reader.dispose.mock.calls.length, 1)
-  }
-  finally { preview.dispose(); tree.dispose(); metadata.dispose(); service.dispose() }
-})
-
-it('metadata drops invalidated in-flight results and caches negative results without repeated reads', async () => {
-  const service = new SizeService()
-  let release: () => void = () => {}
-  let started: () => void = () => {}
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  const entered = new Promise<void>((resolve) => { started = resolve })
-  const reader = { parse: vi.fn(async () => { started(); await gate; return normalizeMetadata(undefined) }), dispose() {} }
-  const metadata = new MetadataService(service, '', undefined, reader)
-  const changed = vi.fn()
-  metadata.onDidChange(changed)
-  try {
-    const pending = metadata.get(logo)
-    await entered
-    metadata.invalidate([assets])
-    release()
-    assert.equal(await pending, undefined)
-    assert.equal(changed.mock.calls.length, 0, 'stale completions never refresh the tree')
-    assert.equal(metadata.peek(logo), undefined)
-    assert.equal((await metadata.get(logo))?.status, 'empty')
-    await metadata.get(logo)
-    assert.equal(reader.parse.mock.calls.length, 2, 'no-metadata results are cached too')
-    service.invalidate()
-    await metadata.get(logo)
-    assert.equal(reader.parse.mock.calls.length, 3, 'manual refresh invalidates metadata')
-    assert.equal((await metadata.get(vscode.Uri.joinPath(assets, 'icon.svg')))?.status, 'unsupported')
-    assert.equal(reader.parse.mock.calls.length, 3)
-  }
-  finally { metadata.dispose(); service.dispose() }
-})
-
-it('metadata bounds its LRU cache, handles remote bytes, and isolates read/parse failures', async () => {
-  const service = new SizeService()
-  const reader = { parse: vi.fn(async () => normalizeMetadata({ exif: { Model: 'Remote' } })), dispose() {} }
-  const metadata = new MetadataService(service, '', undefined, reader)
-  try {
-    const remote = vscode.Uri.parse('memfs://remote/photo.png')
-    state.entries.set(remote.toString(), { type: 1, size: 3 })
-    await metadata.get(remote)
-    assert.deepEqual(reader.parse.mock.calls[0], [new Uint8Array([1, 2, 3])])
-    const tooLarge = vscode.Uri.parse('memfs://remote/large.png')
-    state.entries.set(tooLarge.toString(), { type: 1, size: 33 * 1024 * 1024 })
-    assert.equal((await metadata.get(tooLarge))?.status, 'error')
-    assert.equal(vi.mocked(vscode.workspace.fs.readFile).mock.calls.length, 1, 'large remote resources are not read in full')
-    const missing = vscode.Uri.joinPath(assets, 'missing.png')
-    assert.equal((await metadata.get(missing))?.status, 'error')
-    await metadata.get(missing)
-    assert.equal(reader.parse.mock.calls.length, 1, 'failed reads are cached')
-    for (let index = 0; index < 257; index++) {
-      const uri = vscode.Uri.joinPath(assets, `${index}.png`)
-      state.entries.set(uri.toString(), { type: 1, size: 3 })
-      await metadata.get(uri)
-    }
-    assert.equal(metadata.peek(vscode.Uri.joinPath(assets, '0.png')), undefined, 'old entries are evicted')
-    assert.equal(metadata.peek(vscode.Uri.joinPath(assets, '256.png'))?.status, 'ready')
-    reader.parse.mockRejectedValueOnce(new Error('Worker crashed'))
-    metadata.invalidate([logo])
-    assert.equal((await metadata.get(logo))?.status, 'error')
-    metadata.invalidate([logo])
-    assert.equal((await metadata.get(logo))?.status, 'ready', 'a parse failure cannot poison later jobs')
-  }
-  finally { metadata.dispose(); service.dispose() }
 })

@@ -1,15 +1,22 @@
 import type { Logger } from '../log'
 import type { SizeService } from '../service'
-import type { AssetMetadata } from './types'
+import type { AssetMetadata, MetadataReader } from './types'
 import * as vscode from 'vscode'
 import { Limiter } from '../core/limiter'
+import { isSameOrChild } from '../core/uri'
 import { silentLogger } from '../log'
+import { supportsMetadata } from './formats'
+import { metadataLimits } from './limits'
 import { MetadataWorker } from './runner'
-import { supportsMetadata } from './types'
 
 interface CacheEntry {
+  uri: vscode.Uri
   result?: AssetMetadata
   promise: Promise<AssetMetadata | undefined>
+}
+
+function remoteLimitError(): AssetMetadata {
+  return { status: 'error', groups: [], message: `Metadata preview is limited to ${metadataLimits.remoteBytes / 1024 ** 2} MiB for remote and virtual files.` }
 }
 
 export class MetadataService implements vscode.Disposable {
@@ -18,10 +25,10 @@ export class MetadataService implements vscode.Disposable {
   private readonly changes = new vscode.EventEmitter<vscode.Uri>()
   readonly onDidChange = this.changes.event
   private readonly subscription: vscode.Disposable
-  private readonly reader: Pick<MetadataWorker, 'parse' | 'dispose'>
+  private readonly reader: MetadataReader
   private disposed = false
 
-  constructor(service: SizeService, distDirectory: string, private readonly log: Logger = silentLogger, reader?: Pick<MetadataWorker, 'parse' | 'dispose'>) {
+  constructor(service: SizeService, distDirectory: string, private readonly log: Logger = silentLogger, reader?: MetadataReader) {
     this.reader = reader ?? new MetadataWorker(distDirectory)
     this.subscription = service.onDidChange(uris => this.invalidate(uris))
   }
@@ -37,11 +44,11 @@ export class MetadataService implements vscode.Disposable {
       this.cache.delete(key); this.cache.set(key, existing)
       return existing.promise
     }
-    const entry: CacheEntry = { promise: Promise.resolve(undefined) }
+    const entry: CacheEntry = { uri, promise: Promise.resolve(undefined) }
     this.cache.set(key, entry)
     // LRU, including negative/error results. Evicted pending jobs check their
     // identity before touching the filesystem or publishing stale results.
-    while (this.cache.size > 256) { this.cache.delete(this.cache.keys().next().value!) }
+    while (this.cache.size > metadataLimits.cacheEntries) { this.cache.delete(this.cache.keys().next().value!) }
     entry.promise = this.limiter.run(async () => {
       if (this.disposed || this.cache.get(key) !== entry) { return undefined }
       let result: AssetMetadata
@@ -50,10 +57,16 @@ export class MetadataService implements vscode.Disposable {
         if ((stat.type & (vscode.FileType.Directory | vscode.FileType.SymbolicLink)) !== 0) { return undefined }
         if (this.disposed || this.cache.get(key) !== entry) { return undefined }
         if (uri.scheme === 'file') { result = await this.reader.parse(uri.fsPath) }
-        else if (stat.size > 32 * 1024 * 1024) {
-          result = { status: 'error', groups: [], message: 'Metadata preview is limited to 32 MiB for remote and virtual files.' }
+        else if (stat.size > metadataLimits.remoteBytes) {
+          result = remoteLimitError()
         }
-        else { result = await this.reader.parse(await vscode.workspace.fs.readFile(uri)) }
+        else {
+          const bytes = await vscode.workspace.fs.readFile(uri)
+          if (this.disposed || this.cache.get(key) !== entry) { return undefined }
+          result = bytes.byteLength > metadataLimits.remoteBytes
+            ? remoteLimitError()
+            : await this.reader.parse(bytes)
+        }
       }
       catch (error) {
         this.log.debug(`Metadata unavailable: ${key}`, error)
@@ -69,10 +82,8 @@ export class MetadataService implements vscode.Disposable {
 
   invalidate(uris?: readonly vscode.Uri[]): void {
     if (!uris) { this.cache.clear(); return }
-    for (const key of this.cache.keys()) {
-      const candidate = vscode.Uri.parse(key)
-      if (uris.some(uri => uri.scheme === candidate.scheme && uri.authority === candidate.authority
-        && (candidate.path === uri.path || candidate.path.startsWith(`${uri.path.replace(/\/$/, '')}/`)))) {
+    for (const [key, entry] of this.cache) {
+      if (uris.some(uri => isSameOrChild(entry.uri, uri))) {
         this.cache.delete(key)
       }
     }

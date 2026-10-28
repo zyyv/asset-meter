@@ -6,9 +6,11 @@ import { imageFormat } from './compression/image'
 import { describeMetrics, inlineLabel } from './core/format'
 import { Limiter } from './core/limiter'
 import { ScanCancelled } from './core/scanner'
+import { isSameOrChild } from './core/uri'
 import { silentLogger } from './log'
-import { imageDetailsMarkdown } from './metadata/markdown'
-import { hasMetadata, isPreviewImage, supportsMetadata } from './metadata/types'
+import { isPreviewImage, supportsMetadata } from './metadata/formats'
+import { hasMetadata } from './metadata/normalize'
+import { imageDetailsMarkdown } from './metadata/rendering/markdown'
 import { isSvg } from './svgPreview'
 
 export interface AssetTreeNode {
@@ -22,10 +24,6 @@ export interface AssetTreeNode {
 interface DirectoryEntry {
   valid: boolean
   result: Promise<AssetTreeNode[]>
-}
-
-export function assetResource(resource?: vscode.Uri | AssetTreeNode): vscode.Uri | undefined {
-  return resource && 'uri' in resource ? resource.uri : resource
 }
 
 export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>, vscode.Disposable {
@@ -43,7 +41,7 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
     this.subscription = service.onDidChange((uris) => {
       for (const [key, entry] of this.directories) {
         const directory = vscode.Uri.parse(key)
-        if (!uris || uris.some(uri => within(uri, directory) || within(directory, uri))) {
+        if (!uris || uris.some(uri => isSameOrChild(uri, directory) || isSameOrChild(directory, uri))) {
           entry.valid = false
           this.directories.delete(key)
         }
@@ -100,7 +98,7 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
         // on hover. Size rows never await the metadata worker.
         item.tooltip = this.metadata && supportsMetadata(element.uri.path) && !metadata
           ? undefined
-          : imageDetailsMarkdown(element.uri, metrics, settings, metadata ?? { status: 'unsupported', groups: [] }, true)
+          : imageDetailsMarkdown(element.uri, metrics, settings, metadata, { view: 'hover' })
         if (this.metadata && !metadata) { void this.metadata.get(element.uri) }
       }
       item.accessibilityInformation = { label: `${element.name}, ${hasMetadata(metadata) ? 'metadata available, ' : ''}${inlineLabel(metrics, settings)}` }
@@ -118,7 +116,7 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
     if (this.disposed || token.isCancellationRequested) { return item }
     try {
       const metrics = await this.service.measure(element.uri)
-      if (!token.isCancellationRequested) { item.tooltip = imageDetailsMarkdown(element.uri, metrics, this.service.settings(element.uri), metadata, true) }
+      if (!token.isCancellationRequested) { item.tooltip = imageDetailsMarkdown(element.uri, metrics, this.service.settings(element.uri), metadata, { view: 'hover' }) }
     }
     catch { /* A removed file should not interrupt the hover. */ }
     return item
@@ -173,9 +171,4 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
     this.directories.clear()
     this.changes.dispose()
   }
-}
-
-function within(uri: vscode.Uri, parent: vscode.Uri): boolean {
-  return uri.scheme === parent.scheme && uri.authority === parent.authority
-    && (uri.path === parent.path || uri.path.startsWith(`${parent.path.replace(/\/$/, '')}/`))
 }

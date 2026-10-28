@@ -32,14 +32,20 @@ export function fileCount(metrics: Metrics, settings: Settings): number {
   return settings.fileCountMode === 'direct' ? metrics.directFiles : metrics.files
 }
 
-export function describeMetrics(metrics: Metrics, settings: Settings): string {
-  const lines: string[] = []
+export interface MetricDetail { label: string, value: string }
+
+export function describeMetricFields(metrics: Metrics, settings: Settings): MetricDetail[] {
+  const fields: MetricDetail[] = []
   if (metrics.isDirectory && settings.showFileCount) {
-    lines.push(`Files: ${fileCount(metrics, settings)} (${settings.fileCountMode === 'direct' ? 'direct children' : 'recursive'})`)
+    fields.push({ label: 'Files', value: `${fileCount(metrics, settings)} (${settings.fileCountMode === 'direct' ? 'direct children' : 'recursive'})` })
   }
-  if (metrics.isDirectory) { lines.push(`Folders: ${metrics.directories} (recursive)`) }
-  if (metrics.skipped) { lines.push(`Skipped symbolic links: ${metrics.skipped}`) }
-  if (metrics.errors) { lines.push(`Unreadable items: ${metrics.errors}. Totals include readable items only.`) }
-  lines.push(`Size: ${metrics.errors ? '≥ ' : ''}${formatSize(metrics.bytes, settings.units, settings.decimalPlaces)} (${metrics.bytes.toLocaleString('en-US')} bytes)`)
-  return lines.join('\n')
+  if (metrics.isDirectory) { fields.push({ label: 'Folders', value: `${metrics.directories} (recursive)` }) }
+  if (metrics.skipped) { fields.push({ label: 'Skipped symbolic links', value: String(metrics.skipped) }) }
+  if (metrics.errors) { fields.push({ label: 'Unreadable items', value: `${metrics.errors}. Totals include readable items only.` }) }
+  fields.push({ label: 'Size', value: `${metrics.errors ? '≥ ' : ''}${formatSize(metrics.bytes, settings.units, settings.decimalPlaces)} (${metrics.bytes.toLocaleString('en-US')} bytes)` })
+  return fields
+}
+
+export function describeMetrics(metrics: Metrics, settings: Settings): string {
+  return describeMetricFields(metrics, settings).map(field => `${field.label}: ${field.value}`).join('\n')
 }

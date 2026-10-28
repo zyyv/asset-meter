@@ -1,8 +1,9 @@
-import type { AssetMetadata } from './types'
+import type { AssetMetadata, MetadataInput, MetadataReader } from './types'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { metadataLimits } from './limits'
 
-export class MetadataWorker {
+export class MetadataWorker implements MetadataReader {
   private worker?: Worker
   private idle?: ReturnType<typeof setTimeout>
   private cancel?: () => void
@@ -10,13 +11,13 @@ export class MetadataWorker {
   constructor(private readonly distDirectory: string) {}
 
   // MetadataService serializes calls, so one reusable worker serves the cache.
-  parse(input: string | Uint8Array): Promise<AssetMetadata> {
+  parse(input: MetadataInput): Promise<AssetMetadata> {
     if (this.cancel) { return Promise.reject(new Error('Metadata worker is busy.')) }
     if (this.idle) { clearTimeout(this.idle) }
     return new Promise((resolve, reject) => {
       let worker: Worker
       try {
-        worker = this.worker ??= new Worker(join(this.distDirectory, 'metadata-worker.mjs'), { resourceLimits: { maxOldGenerationSizeMb: 128 } })
+        worker = this.worker ??= new Worker(join(this.distDirectory, 'metadata-worker.mjs'), { resourceLimits: { maxOldGenerationSizeMb: metadataLimits.workerMemoryMiB } })
       }
       catch (error) { reject(error); return }
       let timeout: ReturnType<typeof setTimeout> | undefined
@@ -35,12 +36,12 @@ export class MetadataWorker {
         this.cancel = undefined
         if (error) { this.stop(); reject(error) }
         else {
-          this.idle = setTimeout(() => this.stop(), 15_000)
+          this.idle = setTimeout(() => this.stop(), metadataLimits.workerIdleMs)
           this.idle.unref()
           resolve(result!)
         }
       }
-      timeout = setTimeout(() => finish(new Error('Metadata parsing exceeded 10 seconds.')), 10_000)
+      timeout = setTimeout(() => finish(new Error(`Metadata parsing exceeded ${metadataLimits.workerTimeoutMs / 1000} seconds.`)), metadataLimits.workerTimeoutMs)
       this.cancel = () => finish(new Error('Metadata parsing cancelled.'))
       worker.once('message', onMessage)
       worker.once('error', onError)
