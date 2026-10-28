@@ -44,19 +44,21 @@
 
 ## 专属资源树
 
-Explorer 中的 **Asset Meter** 面板按 `assetMeter.include` / `assetMeter.exclude` 显示命中的文件和目录，并保留通往命中项的父目录，隐藏无关分支。文件图标跟随当前文件图标主题，目录优先、名称自然排序；多工作区分别显示各自根目录。
+Explorer 中的 **Asset Meter** 面板按 `assetMeter.include` / `assetMeter.exclude` 显示命中的文件和目录，并保留通往命中项的父目录，隐藏无关分支。文件图标跟随当前文件图标主题，目录优先、名称自然排序；多工作区分别显示各自根目录。所有目录默认展开，可通过 **Collapse All** 或目录箭头手动收起。
 
-名称右侧常驻显示完整体积，目录显示文件数和总大小；悬停可查看精确字节数。安装或更新原生 Explorer 补丁后，统计统一靠整行最右侧对齐，长文件名优先截断；未安装时仍在文件名后面显示完整统计。面板统计不受 `displayMode` 影响。单位、精度和文件数量设置与原 Explorer 共用，目录总量仍统计所有未被 `exclude` 排除的文件，因此可能包含树中隐藏的文件。
+名称右侧常驻显示完整体积，目录显示文件数和总大小；悬停可查看精确字节数。安装或更新原生 Explorer 补丁后，统计统一靠整行最右侧对齐，长文件名优先截断，大小文字按与原 Explorer 相同的阈值着色；文件名、文件数量和 metadata 标记保持原有颜色。未安装补丁时仍在文件名后面显示完整统计。面板统计不受 `displayMode` 影响。单位、精度、文件数量及 `colorize` 设置与原 Explorer 共用，目录总量仍统计所有未被 `exclude` 排除的文件，因此可能包含树中隐藏的文件。
+
+资源右键菜单最底部的独立分组提供 **Delete**。点击后会弹出确认窗口，显示资源路径；删除目录时会说明包含其中的全部文件和子目录。支持时移入废纸篓，其他文件系统可能永久删除。取消后保留资源；面板不提供删除工作区根目录的操作。
 
 在此面板悬停 JPEG、PNG、GIF、WebP、AVIF、SVG、ICO 或 BMP 时，上方显示图片预览，下方显示 **Path** 和 **Size**（含精确字节数）。预览支持本地及远程开发文件；其他文件和虚拟文件系统资源显示文字信息，目录仍保留文件数量和总大小。
 
-检测到图片包含 metadata 时，Asset Meter 面板会在统计左侧显示 **`ⓘ`**。悬停可查看 EXIF、GPS、XMP、IPTC、ICC 或 PNG 文本等信息；在原 Explorer 或此面板右键选择 **Asset Meter: Open Image Details**，会打开原生 Markdown 预览，上方为图片，下方为路径、体积和 metadata。悬停以居中的 `--------   MetaData   --------` 分隔基础信息，下面按相机与镜头、拍摄参数、时间与尺寸组织 key/value 行，Path、Size 和 metadata 统一使用普通 tooltip 字体和无边框双列布局，灰色 key 靠左、亮色 value 靠右并保留间距，多行 value 与 key 首行对齐；metadata 分组之间只留一个空行。每个 key 前保留灰色的内置 Codicons 图标和 4px 间距，key 与 value 使用统一行布局，共享首行文字基线，无需额外图标依赖或图片下载。日期、像素、焦距、颜色与 GPS 值自动格式化，省略未评级、默认方向、固件和重复时间。详情窗口使用同一份格式化结果，保留「字段 / 值」两列表格；没有有效数据时隐藏整个 Metadata 区域。EXIF 保留常用拍摄信息，过滤版本号、内部结构、校准数据和二进制块，重复字段只展示一次。不支持的格式仍可查看基本信息，图像能否显示取决于编辑器的格式支持。
+检测到图片包含 metadata 时，Asset Meter 面板会在统计左侧显示 **`ⓘ`**。悬停可查看 EXIF、GPS、XMP、IPTC、ICC 或 PNG 文本等信息；在原 Explorer 或此面板右键选择 **Open Image Details**，会打开原生 Markdown 预览，上方为图片，下方为路径、体积和 metadata。悬停以居中的 `--------   MetaData   --------` 分隔基础信息，下面按相机与镜头、拍摄参数、时间与尺寸组织 key/value 行，Path、Size 和 metadata 统一使用普通 tooltip 字体和无边框双列布局，灰色 key 靠左、亮色 value 靠右并保留间距，多行 value 与 key 首行对齐；metadata 分组之间只留一个空行。每个 key 前保留灰色的内置 Codicons 图标和 4px 间距，key 与 value 使用统一行布局，共享首行文字基线，无需额外图标依赖或图片下载。日期、像素、焦距、颜色与 GPS 值自动格式化，省略未评级、默认方向、固件和重复时间。详情窗口使用同一份格式化结果，保留「字段 / 值」两列表格；没有有效数据时隐藏整个 Metadata 区域。EXIF 保留常用拍摄信息，过滤版本号、内部结构、校准数据和二进制块，重复字段只展示一次。不支持的格式仍可查看基本信息，图像能否显示取决于编辑器的格式支持。
 
 Metadata 通过 `exifr` 在独立 Worker 中按需异步解析，不阻塞体积统计；悬停与 Markdown 预览共享最多 256 个资源的 LRU 缓存，并合并同一文件的并发请求。无 metadata 和解析失败的结果也会缓存，修改、删除、重命名或手动刷新后失效。Worker 串行处理任务，10 秒超时，空闲 15 秒释放；本地文件按段读取，远程或虚拟文件最大读取 32 MiB。PNG / WebP 的 metadata 段最多读取 8 MiB，PNG 解压后的数据也累计限制为 8 MiB，过大的字段会截断，悬停展示拍摄摘要和最多 4 个补充字段，完整预览使用同一份已缓存数据。
 
 模块职责、扩展位置与性能约束见 [Metadata 模块说明](src/metadata/README.md)。
 
-面板工具栏提供 **刷新、全部折叠、设置**。文件保存、创建、删除、重命名和规则变更会自动刷新。右键资源可在原 Explorer 中定位、诊断匹配规则；macOS 本地工作区还可选择 **Asset Meter: Reveal in Finder**，打开所在目录并选中资源。JPEG / PNG / WebP 可直接进入现有压缩流程。没有匹配项时提供设置入口。
+面板工具栏提供 **刷新、全部折叠、设置**。文件保存、创建、删除、重命名和规则变更会自动刷新。右键资源可在原 Explorer 中定位、诊断匹配规则；macOS 本地工作区还可选择 **Reveal in Finder**，打开所在目录并选中资源。JPEG / PNG / WebP 可直接进入现有压缩流程。没有匹配项时提供设置入口。
 
 点击原生 Explorer 或 Asset Meter 面板中的 SVG，默认左侧打开可编辑源码、右侧显示图像预览。预览随未保存的代码修改实时更新，切换 SVG 时复用同一个预览窗格。设置中的 **Asset Meter: Svg Open Mode** 提供 **Both**（默认）、**Image**、**Code**：Image 仅显示预览，Code 仅显示源码。差异编辑器中的 SVG 不会触发预览。
 
@@ -163,7 +165,7 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 
 运行 **Asset Meter: Show Logs**，或在 **查看 → 输出** 中选择 **Asset Meter**。默认记录启动版本、工作区、有效匹配配置、补丁状态、手动刷新以及文件系统错误。不会记录文件内容或 TinyPNG API Key。
 
-某个文件没有显示时，在 Explorer 中右键它，选择 **Asset Meter: Diagnose File Matching**。也可以在命令面板执行此命令，诊断当前文本编辑器中的文件；没有活动文本文件时会让你选择文件或目录。日志会说明是否在工作区、是否被禁用或排除、是否匹配 include、是否为符号链接，并在可计算时输出字节数和文件数量。未装补丁、等待重载或关闭 `explorer.decorations.badges` 也会明确记录。
+某个文件没有显示时，在 Explorer 中右键它，选择 **Diagnose File Matching**。也可以在命令面板执行此命令，诊断当前文本编辑器中的文件；没有活动文本文件时会让你选择文件或目录。日志会说明是否在工作区、是否被禁用或排除、是否匹配 include、是否为符号链接，并在可计算时输出字节数和文件数量。未装补丁、等待重载或关闭 `explorer.decorations.badges` 也会明确记录。
 
 需要查看逐文件自动处理过程时，运行 **Developer: Set Log Level...**，选择 **Asset Meter → Debug**，再运行 **Asset Meter: Refresh Sizes**。Debug 日志包含匹配结果、测量结果、刷新路径和最终徽标；正常使用时恢复 Info，避免大量逐文件日志。
 
@@ -210,7 +212,7 @@ out/vs/workbench/workbench.desktop.main.css
 | 情况 | 检查方式 |
 | --- | --- |
 | 只有短徽标、`ⓘ` 或悬停提示，没有完整行内大小 | 安装或重新应用补丁并重载，启用 `explorer.decorations.badges`；`"hover"` 模式需要将鼠标移到对应文件或目录行。 |
-| 某项没有显示 | 右键该项运行 **Asset Meter: Diagnose File Matching**，在 **Output → Asset Meter** 查看原因。 |
+| 某项没有显示 | 右键该项运行 **Diagnose File Matching**，在 **Output → Asset Meter** 查看原因。 |
 | Remote SSH、WSL、Dev Containers | 统计在工作区扩展宿主运行；完整行内标签需要访问本地桌面程序文件，不能假定远程会话支持补丁。 |
 | 虚拟工作区 | 统计取决于文件系统提供者是否支持文件属性、目录枚举和变更监听。 |
 | 浏览器或 vscode.dev | 不支持；扩展需要 Node.js 扩展宿主及 WebAssembly worker。 |

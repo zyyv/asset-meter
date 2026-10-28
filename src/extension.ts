@@ -9,7 +9,7 @@ import { SizeDecorationProvider } from './decorations'
 import { ImageDetailsPreview } from './metadata/preview'
 import { MetadataService } from './metadata/service'
 import { getNativePatchStatus, installNativePatch, restoreNativePatch } from './nativePatch'
-import { assetResource, registerResourceActions } from './resourceActions'
+import { assetResource, deleteResource, registerResourceActions } from './resourceActions'
 import { SizeService } from './service'
 import { SvgPreview } from './svgPreview'
 
@@ -28,8 +28,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   const service = new SizeService(output)
   const metadata = new MetadataService(service, join(context.extensionPath, 'dist'), output)
   const imageDetails = new ImageDetailsPreview(service, metadata)
-  const assetTree = new AssetTreeProvider(service, output, metadata)
-  const assetView = vscode.window.createTreeView('assetMeter.explorer', { treeDataProvider: assetTree, showCollapseAll: true })
   const refresh = (uris: readonly vscode.Uri[]) => {
     void service.refresh(uris).catch(error => output.error('Failed to refresh sizes.', error))
   }
@@ -42,6 +40,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   const patchStatus = await readPatchStatus()
   // Written program files take effect only in a freshly started extension host.
   const nativePatchActive = patchStatus.installed && Date.now() - process.uptime() * 1000 >= patchStatus.appliedAt
+  const assetTree = new AssetTreeProvider(service, output, metadata, nativePatchActive)
+  const assetView = vscode.window.createTreeView('assetMeter.explorer', { treeDataProvider: assetTree, showCollapseAll: true })
   const decorations = new SizeDecorationProvider(service, nativePatchActive, output)
   const logRenderingStatus = (uri?: vscode.Uri, status = patchStatus) => {
     const badges = vscode.workspace.getConfiguration('explorer', uri).get('decorations.badges', true)
@@ -101,6 +101,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
       openSvg: uri => svgPreview.open(uri),
       previewImage: uri => imageDetails.open(uri),
       compressImage: uri => compression.compress(uri),
+      deleteResource: uri => deleteResource(uri, deleted => refresh([deleted]), output),
     }),
     vscode.window.registerFileDecorationProvider(decorations),
     new vscode.Disposable(() => { for (const watcher of watchers.values()) { watcher.dispose() } watchers.clear() }),
@@ -183,12 +184,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     }),
     new vscode.Disposable(() => { if (timer) { clearTimeout(timer) } pending.clear() }),
   )
-  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV7NoticeShown' : 'nativePatchV7NoticeShown'
+  const noticeKey = patchStatus.needsUpgrade ? 'nativePatchUpgradeV8NoticeShown' : 'nativePatchV8NoticeShown'
   if (!nativePatchActive && !context.globalState.get(noticeKey, false)) {
     void context.globalState.update(noticeKey, true)
     void vscode.window.showInformationMessage(
       patchStatus.needsUpgrade
-        ? 'Update the native Explorer patch to use consistent file count and size spacing in both asset trees. Original backups will be preserved.'
+        ? 'Update the native Explorer patch to use consistent size colors in Explorer and Asset Meter. Original backups will be preserved.'
         : 'Full inline labels require a reversible VS Code patch. It triggers an integrity warning and must be reapplied after editor updates.',
       patchStatus.needsUpgrade ? 'Update Patch' : 'Install Patch',
     ).then((action) => { if (action) { void vscode.commands.executeCommand('assetMeter.installNativePatch') } })

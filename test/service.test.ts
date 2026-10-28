@@ -384,6 +384,7 @@ it('asset tree shows the same full metrics, preserves theme icons and opens actu
     const folderItem = await tree.getTreeItem(folder!)
     assert.equal(folderItem.description, '2 files · 15 B', 'folder totals retain files hidden by include, as in Explorer')
     assert.equal(folderItem.iconPath, vscode.ThemeIcon.Folder)
+    assert.equal(folderItem.collapsibleState, vscode.TreeItemCollapsibleState.Expanded)
     const [file] = await tree.getChildren(folder)
     const item = await tree.getTreeItem(file!)
     assert.equal(item.description, '10 B')
@@ -407,6 +408,44 @@ it('asset tree shows the same full metrics, preserves theme icons and opens actu
     assert.equal((await tree.getTreeItem(folder!)).description, '15 B', 'panel keeps full descriptions in hover mode too')
   }
   finally { decorations.dispose(); tree.dispose(); service.dispose() }
+})
+
+it('defaults every non-empty asset folder to expanded, including nested descendants', async () => {
+  const images = vscode.Uri.joinPath(assets, 'images')
+  const nested = vscode.Uri.joinPath(images, 'nested')
+  state.entries.set(images.toString(), { type: 2, size: 0 })
+  state.entries.set(nested.toString(), { type: 2, size: 0 })
+  state.entries.set(vscode.Uri.joinPath(nested, 'deep.png').toString(), { type: 1, size: 5 })
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  const visit = async (parent?: Parameters<typeof tree.getChildren>[0]) => {
+    for (const node of await tree.getChildren(parent)) {
+      const item = await tree.getTreeItem(node)
+      assert.equal(item.collapsibleState, node.hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None)
+      if (node.hasChildren) { await visit(node) }
+    }
+  }
+  try { await visit() }
+  finally { tree.dispose(); service.dispose() }
+})
+
+it('uses the same severity palette for asset descriptions without inheriting Explorer hover mode', async () => {
+  state.config.displayMode = 'hover'
+  state.config.fileColorThresholdsMiB = [0, 1, 2]
+  state.config.folderColorThresholdsMiB = [0, 1, 2]
+  state.entries.set(logo.toString(), { type: 1, size: 2 * 1024 ** 2 })
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service, undefined, undefined, true)
+  try {
+    const [folder] = await tree.getChildren()
+    const [file] = await tree.getChildren(folder)
+    assert.equal((await tree.getTreeItem(file!)).description, '\u2063\u2060\u2060\u2060\u20602.1 MB\u2063')
+    assert.equal((await tree.getTreeItem(folder!)).description, '\u2063\u2060\u2060\u2060\u20601 file · 2.1 MB\u2063')
+    state.config.colorize = false
+    service.invalidate(undefined, true)
+    assert.equal((await tree.getTreeItem(file!)).description, '\u2063\u20602.1 MB\u2063')
+  }
+  finally { tree.dispose(); service.dispose() }
 })
 
 it('asset tree previews SVGs and routes them through the configured opener, including uppercase extensions and punctuation', async () => {

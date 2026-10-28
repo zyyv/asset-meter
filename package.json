@@ -80,56 +80,72 @@
     "commands": [
       {
         "command": "assetMeter.previewImage",
-        "title": "Asset Meter: Open Image Details",
+        "title": "Open Image Details",
+        "category": "Asset Meter",
         "icon": "$(info)"
       },
       {
         "command": "assetMeter.revealInExplorer",
-        "title": "Asset Meter: Reveal in Explorer",
+        "title": "Reveal in Explorer",
+        "category": "Asset Meter",
         "icon": "$(go-to-file)"
       },
       {
         "command": "assetMeter.revealInFinder",
-        "title": "Asset Meter: Reveal in Finder",
+        "title": "Reveal in Finder",
+        "category": "Asset Meter",
         "icon": "$(folder-opened)",
         "enablement": "isMac && !remoteName"
       },
       {
+        "command": "assetMeter.deleteResource",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
         "command": "assetMeter.refresh",
-        "title": "Asset Meter: Refresh Sizes",
+        "title": "Refresh Sizes",
+        "category": "Asset Meter",
         "icon": "$(refresh)"
       },
       {
         "command": "assetMeter.toggleDisplayMode",
-        "title": "Asset Meter: Toggle Always / Hover",
+        "title": "Toggle Always / Hover",
+        "category": "Asset Meter",
         "icon": "$(eye)"
       },
       {
         "command": "assetMeter.openSettings",
-        "title": "Asset Meter: Open Settings",
+        "title": "Open Settings",
+        "category": "Asset Meter",
         "icon": "$(gear)"
       },
       {
         "command": "assetMeter.showOutput",
-        "title": "Asset Meter: Show Logs",
+        "title": "Show Logs",
+        "category": "Asset Meter",
         "icon": "$(output)"
       },
       {
         "command": "assetMeter.diagnose",
-        "title": "Asset Meter: Diagnose File Matching"
+        "title": "Diagnose File Matching",
+        "category": "Asset Meter"
       },
       {
         "command": "assetMeter.compressImage",
-        "title": "Asset Meter: Compress Image",
+        "title": "Compress Image",
+        "category": "Asset Meter",
         "icon": "$(fold)"
       },
       {
         "command": "assetMeter.installNativePatch",
-        "title": "Asset Meter: Install / Reapply Native Explorer Patch"
+        "title": "Install / Reapply Native Explorer Patch",
+        "category": "Asset Meter"
       },
       {
         "command": "assetMeter.restoreNativePatch",
-        "title": "Asset Meter: Restore Native Explorer Patch"
+        "title": "Restore Native Explorer Patch",
+        "category": "Asset Meter"
       }
     ],
     "menus": {
@@ -170,6 +186,11 @@
           "command": "assetMeter.diagnose",
           "when": "view == assetMeter.explorer",
           "group": "assetMeter@2"
+        },
+        {
+          "command": "assetMeter.deleteResource",
+          "when": "view == assetMeter.explorer && viewItem != assetMeter.workspaceRoot",
+          "group": "z_delete@1"
         }
       ],
       "commandPalette": [
@@ -179,6 +200,10 @@
         },
         {
           "command": "assetMeter.revealInFinder",
+          "when": "false"
+        },
+        {
+          "command": "assetMeter.deleteResource",
           "when": "false"
         }
       ],

@@ -1,7 +1,7 @@
 import type { Logger } from './log'
 import type { SizeService } from './service'
 import * as vscode from 'vscode'
-import { compactSizeBadge, describeMetrics, inlineLabel, nativeHoverMarker, nativeLabelMarker, nativeToneMarker } from './core/format'
+import { compactSizeBadge, describeMetrics, inlineLabel, nativeSizeLabel } from './core/format'
 import { ScanCancelled } from './core/scanner'
 import { sizeSeverity } from './core/severity'
 import { silentLogger } from './log'
@@ -47,10 +47,8 @@ export class SizeDecorationProvider implements vscode.FileDecorationProvider, vs
       const severity = settings.colorize ? sizeSeverity(metrics.bytes, isDirectory, settings) : 'normal'
       // Keep severity metadata invisible even if an older renderer shows the
       // complete badge instead of decoding it. Never prefix counts with digits.
-      const tone = nativeToneMarker.repeat({ normal: 1, warning: 2, large: 3, critical: 4 }[severity])
-      const mode = settings.displayMode === 'hover' ? nativeHoverMarker : ''
       const badge = this.nativePatchActive
-        ? `${nativeLabelMarker}${tone}${mode}${inlineLabel(metrics, settings)}${nativeLabelMarker}`
+        ? nativeSizeLabel(inlineLabel(metrics, settings), severity, settings.displayMode === 'hover')
         : settings.displayMode === 'always' ? compactSizeBadge(metrics.bytes, settings.units) : undefined
       const tooltip = `Asset Meter\n${describeMetrics(metrics, settings)}${this.nativePatchActive ? '' : '\nFull inline sizes: run Asset Meter: Install / Reapply Native Explorer Patch.'}`
       this.log.debug(`Decoration ready: ${uri.toString()}`, JSON.stringify({ badge, nativePatchActive: this.nativePatchActive, displayMode: settings.displayMode }))

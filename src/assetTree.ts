@@ -3,9 +3,10 @@ import type { MetadataService } from './metadata/service'
 import type { SizeService } from './service'
 import * as vscode from 'vscode'
 import { imageFormat } from './compression/image'
-import { describeMetrics, inlineLabel } from './core/format'
+import { describeMetrics, inlineLabel, nativeSizeLabel } from './core/format'
 import { Limiter } from './core/limiter'
 import { ScanCancelled } from './core/scanner'
+import { sizeSeverity } from './core/severity'
 import { isSameOrChild } from './core/uri'
 import { silentLogger } from './log'
 import { isPreviewImage, supportsMetadata } from './metadata/formats'
@@ -37,7 +38,7 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
   private readonly metadataSubscription?: vscode.Disposable
   private readonly nodes = new Map<string, AssetTreeNode>()
 
-  constructor(private readonly service: SizeService, private readonly log: Logger = silentLogger, private readonly metadata?: MetadataService) {
+  constructor(private readonly service: SizeService, private readonly log: Logger = silentLogger, private readonly metadata?: MetadataService, private readonly nativePatchActive = false) {
     this.subscription = service.onDidChange((uris) => {
       for (const [key, entry] of this.directories) {
         const directory = vscode.Uri.parse(key)
@@ -75,14 +76,14 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
     this.nodes.set(element.uri.toString(), element)
     const state = !element.hasChildren
       ? vscode.TreeItemCollapsibleState.None
-      : element.workspaceRoot ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.Expanded
     const item = new vscode.TreeItem(element.name, state)
     item.id = element.uri.toString()
     // Keep theme file/folder icons, without duplicating the original Explorer's
     // size decoration badge alongside this view's full description.
     item.resourceUri = element.uri.with({ scheme: 'asset-meter-tree' })
     item.iconPath = element.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File
-    item.contextValue = element.isDirectory ? 'assetMeter.folder' : imageFormat(element.uri.path) ? 'assetMeter.image' : isPreviewImage(element.uri.path) ? 'assetMeter.previewImage' : 'assetMeter.file'
+    item.contextValue = element.workspaceRoot ? 'assetMeter.workspaceRoot' : element.isDirectory ? 'assetMeter.folder' : imageFormat(element.uri.path) ? 'assetMeter.image' : isPreviewImage(element.uri.path) ? 'assetMeter.previewImage' : 'assetMeter.file'
     if (!element.isDirectory) {
       item.command = { command: isSvg(element.uri) ? 'assetMeter.openSvg' : 'vscode.open', title: 'Open File', arguments: [element.uri] }
     }
@@ -90,7 +91,9 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
       const metrics = await this.service.measure(element.uri)
       const settings = this.service.settings(element.uri)
       const metadata = this.metadata?.peek(element.uri)
-      item.description = `${hasMetadata(metadata) ? 'ⓘ · ' : ''}${inlineLabel(metrics, settings)}`
+      const description = `${hasMetadata(metadata) ? 'ⓘ · ' : ''}${inlineLabel(metrics, settings)}`
+      const severity = settings.colorize ? sizeSeverity(metrics.bytes, metrics.isDirectory, settings) : 'normal'
+      item.description = this.nativePatchActive ? nativeSizeLabel(description, severity) : description
       const details = `Path: ${element.uri.path}\n${describeMetrics(metrics, settings)}`
       item.tooltip = details
       if (!element.isDirectory && isPreviewImage(element.uri.path)) {

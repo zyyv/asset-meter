@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 
-const patchRevision = 7
+const patchRevision = 8
 const marker = `ASSET_METER_NATIVE_PATCH_V${patchRevision}`
 const hasPatch = (source: string) => /ASSET_(?:METER|SIZE)_NATIVE_PATCH_V\d+/.test(source)
 const backupName = '.asset-meter-native-patch'
@@ -21,6 +21,7 @@ export interface PatchResult { changed: boolean, backupDirectory: string }
 // Accept the previous numeric header while older extension hosts finish
 // reloading, but only emit invisible headers in the current extension.
 const nativeBadgePattern = String.raw`/^\u2063(\u2060{1,4}|[0-3])(\u2062)?((?:\d+ files? \u00b7 )?(?:\u2265 )?\d+(?:\.\d+)? (?:B|[KMGTPE]i?B))\u2063$/u`
+const nativeDescriptionPattern = String.raw`/^\u2063(\u2060{1,4})((?:ⓘ \u00b7 )?(?:\d+ files? \u00b7 )?(?:\u2265 )?\d+(?:\.\d+)? (?:B|[KMGTPE]i?B))\u2063$/u`
 const badgeStyle = ' white-space: nowrap; width: auto; min-width: 0; max-width: none; flex: 0 0 auto; margin-right: 12px; font-family: var(--vscode-font-family); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; opacity: 1;'
 const countStyle = ' margin-left: auto; padding-left: 12px; flex: 0 0 auto; white-space: pre; font-family: var(--vscode-font-family); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground);'
 const assetTreeLabel = '.monaco-workbench .customview-tree .monaco-list[aria-label="Asset Meter"] .custom-view-tree-node-item-resourceLabel'
@@ -53,6 +54,26 @@ function __assetMeterNativeBadgeV5(value) {
     color: ["var(--vscode-descriptionForeground)", "var(--vscode-assetMeter-sizeWarning)", "var(--vscode-assetMeter-sizeLarge)", "var(--vscode-assetMeter-sizeCritical)"][tone],
     other: fragments.filter(part => !pattern.test(part)).join(", ")
   };
+}
+`
+
+// Change only our encoded descriptions in the Asset Meter tree. Using DOM
+// nodes rather than HTML also preserves the workbench's Trusted Types policy.
+const descriptionHelper = `
+function __assetMeterDescriptionV8(element) {
+  if (!element) return;
+  const value = element.textContent || "";
+  if (value.charCodeAt(0) !== 0x2063) return;
+  if (!element.closest('.customview-tree .monaco-list[aria-label="Asset Meter"]')) return;
+  const parsed = ${nativeDescriptionPattern}.exec(value);
+  if (!parsed) return;
+  const text = parsed[2];
+  const separator = text.lastIndexOf(" · ");
+  const size = element.ownerDocument.createElement("span");
+  size.className = "asset-meter-stat-size";
+  size.textContent = separator < 0 ? text : text.slice(separator + 3);
+  size.style.color = ["var(--vscode-descriptionForeground)", "var(--vscode-assetMeter-sizeWarning)", "var(--vscode-assetMeter-sizeLarge)", "var(--vscode-assetMeter-sizeCritical)"][parsed[1].length - 1];
+  element.replaceChildren(element.ownerDocument.createTextNode(separator < 0 ? "" : text.slice(0, separator + 3)), size);
 }
 `
 
@@ -97,7 +118,13 @@ export function patchWorkbench(source: string): string {
     return `(()=>{const __assetMeterData=__assetMeterNativeBadgeV5(${value});if(!__assetMeterData){${ordinary};return;}${outside};${emit}(${sizeSelector},${sizeContent},${sheet});if(__assetMeterData.count){${emit}(${countSelector},${countContent},${sheet});}})()`
   })
   if (matches !== 2) { throw new Error(`Unsupported decoration renderer layout (${matches} matches). No program files were modified.`) }
-  return `${result}\n/* ${marker} */\n${rendererHelper}`
+  let descriptions = 0
+  const patched = result.replace(/if\(([\w$]+)\?\.suffix\|\|this\.suffixNode\)\{/g, (match) => {
+    descriptions++
+    return `__assetMeterDescriptionV8(this.descriptionNode?.element);${match}`
+  })
+  if (descriptions !== 1) { throw new Error(`Unsupported asset tree description layout (${descriptions} matches). No program files were modified.`) }
+  return `${patched}\n/* ${marker} */\n${rendererHelper}\n${descriptionHelper}`
 }
 
 function sha256(content: string): string { return createHash('sha256').update(content).digest('hex') }

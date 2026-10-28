@@ -8,8 +8,46 @@ import { it } from 'vitest'
 import { getNativePatchStatus, installNativePatch, patchExtensionHost, patchWorkbench, restoreNativePatch } from '../src/nativePatch'
 
 const host = `class Decoration { static validate(t) { if(typeof t.badge=="string"){let e=t.badge.length?1:0;if(e<t.badge.length&&(e+=1),t.badge.length>e)throw new Error("The 'badge'-property must be undefined or a short character")}return true} } globalThis.validate = Decoration.validate;`
-const renderer = 'globalThis.one = function(i,t,e){emit(`.${this.itemBadgeClassName}::after`,`content: "${i}"; color: ${color(t)};`,e)};globalThis.many=function(i,t,e){emit(`.${this.itemBadgeClassName}::after`,`content: "${i.join(", ")}"; color: ${t};`,e)};'
+const renderer = 'globalThis.one = function(i,t,e){emit(`.${this.itemBadgeClassName}::after`,`content: "${i}"; color: ${color(t)};`,e)};globalThis.many=function(i,t,e){emit(`.${this.itemBadgeClassName}::after`,`content: "${i.join(", ")}"; color: ${t};`,e)};globalThis.setLabel = function(i){if(i?.suffix||this.suffixNode){this.suffixNode=i.suffix}};'
 const targetPaths = ['out/vs/workbench/api/node/extensionHostProcess.js', 'out/vs/workbench/workbench.desktop.main.js', 'out/vs/workbench/workbench.desktop.main.css']
+
+it('colors only encoded Asset Meter size spans and leaves metadata indicators and counts neutral', () => {
+  const context: Record<string, unknown> = {}
+  runInNewContext(patchWorkbench(renderer), context)
+  const setLabel = context.setLabel as (options: object) => void
+  const children: { textContent: string, className?: string, style?: { color?: string } }[] = []
+  const element = {
+    textContent: '\u2063\u2060\u2060\u2060\u2060ⓘ · 6.3 MB\u2063',
+    closest: () => true,
+    ownerDocument: {
+      createElement: () => ({ className: '', textContent: '', style: {} }),
+      createTextNode: (textContent: string) => ({ textContent }),
+    },
+    replaceChildren: (...nodes: typeof children) => { children.splice(0, children.length, ...nodes) },
+  }
+  setLabel.call({ descriptionNode: { element } }, {})
+  assert.equal(children.map(node => node.textContent).join(''), 'ⓘ · 6.3 MB')
+  assert.equal(children[0]!.textContent, 'ⓘ · ')
+  assert.equal(children[0]!.style, undefined)
+  assert.equal(children[1]!.style!.color, 'var(--vscode-assetMeter-sizeCritical)')
+  element.textContent = '\u2063\u2060\u2060\u20603 files · 1.5 MiB\u2063'
+  setLabel.call({ descriptionNode: { element } }, {})
+  assert.equal(children.map(node => node.textContent).join(''), '3 files · 1.5 MiB')
+  assert.equal(children[0]!.textContent, '3 files · ')
+  assert.equal(children[1]!.style!.color, 'var(--vscode-assetMeter-sizeLarge)')
+  const previous = children[1]
+  element.closest = () => false
+  setLabel.call({ descriptionNode: { element } }, {})
+  assert.equal(children[1], previous, 'other views are not modified')
+  element.closest = () => true
+  element.textContent = '\u2063\u2060";color:red;\u2063'
+  setLabel.call({ descriptionNode: { element } }, {})
+  assert.equal(children[1], previous, 'non-numeric descriptions cannot inject styles')
+})
+
+it('rejects unknown asset description layouts before modifying program files', () => {
+  assert.throws(() => patchWorkbench(renderer.replace('if(i?.suffix||this.suffixNode)', 'if(false)')), /Unsupported asset tree description layout/)
+})
 
 it('patched host accepts only safe full Asset Meter labels and preserves other badge validation', () => {
   const context: { validate?: (value: { badge: string }) => boolean } = {}
@@ -149,7 +187,7 @@ it('upgrading a previous patch adds row hover support and retains the original b
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { revision: number, files: { patchedHash: string }[] }
     manifest.revision = 3
     for (const [index, file] of targetPaths.entries()) {
-      const older = (await readFile(path.join(root, file), 'utf8')).replaceAll('ASSET_METER_NATIVE_PATCH_V7', 'ASSET_METER_NATIVE_PATCH_V3')
+      const older = (await readFile(path.join(root, file), 'utf8')).replaceAll('ASSET_METER_NATIVE_PATCH_V8', 'ASSET_METER_NATIVE_PATCH_V3')
       await writeFile(path.join(root, file), older)
       manifest.files[index]!.patchedHash = createHash('sha256').update(older).digest('hex')
     }
@@ -165,7 +203,7 @@ it('upgrading a previous patch adds row hover support and retains the original b
   finally { await rm(root, { recursive: true, force: true }) }
 })
 
-it.each([5, 6])('upgrading V%s keeps dedicated tree statistics right-aligned and restoration reversible', async (revision) => {
+it.each([5, 6, 7])('upgrading V%s keeps dedicated tree statistics right-aligned and restoration reversible', async (revision) => {
   const root = await fixture()
   try {
     const originals = await Promise.all(targetPaths.map(file => readFile(path.join(root, file), 'utf8')))
@@ -176,7 +214,7 @@ it.each([5, 6])('upgrading V%s keeps dedicated tree statistics right-aligned and
     manifest.revision = revision
     for (const [index, file] of targetPaths.entries()) {
       const previous = (await readFile(path.join(root, file), 'utf8'))
-        .replaceAll('ASSET_METER_NATIVE_PATCH_V7', `ASSET_METER_NATIVE_PATCH_V${revision}`)
+        .replaceAll('ASSET_METER_NATIVE_PATCH_V8', `ASSET_METER_NATIVE_PATCH_V${revision}`)
         .split('\n')
         .filter(line => revision !== 5 || !line.startsWith('.monaco-workbench .customview-tree'))
         .join('\n')
@@ -195,7 +233,7 @@ it.each([5, 6])('upgrading V%s keeps dedicated tree statistics right-aligned and
     assert.ok(treeRules.some(rule => rule.includes('.monaco-icon-description-container { margin-left: auto;') && rule.includes('flex: 0 0 auto;')))
     assert.ok(treeRules.some(rule => rule.includes('.monaco-icon-name-container { min-width: 0; overflow: hidden; text-overflow: ellipsis;')))
     const upgraded = JSON.parse(await readFile(manifestPath, 'utf8')) as typeof manifest
-    assert.equal(upgraded.revision, 7)
+    assert.equal(upgraded.revision, 8)
     assert.deepEqual(upgraded.files.map(file => file.originalHash), originalHashes)
     assert.equal((await getNativePatchStatus(root)).installed, true)
     await restoreNativePatch(root)
@@ -216,7 +254,7 @@ it.each(['restore', 'upgrade'] as const)('renamed extension can %s a legacy Asse
     manifest.revision = 4
     for (const [index, file] of targetPaths.entries()) {
       const legacy = (await readFile(path.join(root, file), 'utf8'))
-        .replaceAll('ASSET_METER_NATIVE_PATCH_V7', 'ASSET_SIZE_NATIVE_PATCH_V4')
+        .replaceAll('ASSET_METER_NATIVE_PATCH_V8', 'ASSET_SIZE_NATIVE_PATCH_V4')
         .replaceAll('assetMeter', 'assetSize')
       await writeFile(path.join(root, file), legacy)
       manifest.files[index]!.patchedHash = createHash('sha256').update(legacy).digest('hex')
@@ -231,7 +269,7 @@ it.each(['restore', 'upgrade'] as const)('renamed extension can %s a legacy Asse
       assert.deepEqual(await installNativePatch(root), { changed: true, backupDirectory })
       assert.equal((await getNativePatchStatus(root)).installed, true)
       const workbench = await readFile(path.join(root, targetPaths[1]!), 'utf8')
-      assert.match(workbench, /ASSET_METER_NATIVE_PATCH_V7/)
+      assert.match(workbench, /ASSET_METER_NATIVE_PATCH_V8/)
       assert.match(workbench, /--vscode-assetMeter-sizeCritical/)
     }
     assert.deepEqual(await Promise.all(targetPaths.map((_, index) => readFile(path.join(backupDirectory, `${index}.original`), 'utf8'))), originals)

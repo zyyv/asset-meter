@@ -83,6 +83,11 @@ try {
     'assetMeter.refreshDelay': 100,
     'workbench.editorAssociations': { '*.svg': 'imagePreview.previewEditor' },
   }
+  const expectColors = process.env.ASSET_METER_EXPECT_COLORS === '1'
+  if (expectColors) {
+    settings['assetMeter.fileColorThresholdsMiB'] = [0.00005, 0.0005, 0.001]
+    settings['assetMeter.folderColorThresholdsMiB'] = [0.00005, 0.0005, 0.001]
+  }
   const settingsFile = path.join(workspace, '.vscode/settings.json')
   await writeFile(settingsFile, JSON.stringify(settings))
   await writeFile(path.join(profile, 'User/settings.json'), JSON.stringify({
@@ -95,12 +100,14 @@ try {
     'chat.disableAIFeatures': true,
     'window.restoreWindows': 'none',
     'window.menuStyle': 'custom',
+    'window.dialogStyle': 'custom',
     'security.workspace.trust.enabled': false,
   }))
   child = spawn(executable, [workspace, '--user-data-dir', profile, '--extensions-dir', path.join(temporary, 'extensions'), `--extensionDevelopmentPath=${root}`, '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', '--disable-updates', '--no-sandbox', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] })
   const capture = (data) => { log = (log + data.toString()).slice(-20_000) }
   child.stdout.on('data', capture); child.stderr.on('data', capture)
   child.on('error', (error) => { log += error.message })
+  child.on('exit', (code, signal) => { log += `\nVS Code exited: code=${code}, signal=${signal}\n` })
   await waitFor(async () => (await fetch(`http://127.0.0.1:${port}/json/version`)).ok)
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
   page = await waitFor(async () => browser.contexts()[0]?.pages().find(candidate => /workbench.*html/.test(candidate.url())))
@@ -141,9 +148,9 @@ try {
   }
   await name('assets').waitFor({ state: 'visible' })
   await waitFor(async () => (await row('assets').locator('.label-description').textContent()) === '3 files · 1.7 KB')
-  await expand('assets')
+  assert.equal(await row('assets').getAttribute('aria-expanded'), 'true', 'top-level folders start expanded')
   await name('images').waitFor({ state: 'visible' })
-  await expand('images')
+  assert.equal(await row('images').getAttribute('aria-expanded'), 'true', 'nested folders start expanded')
   await name('hero.png').waitFor({ state: 'visible' })
   await waitFor(async () => (await row('hero.png').locator('.label-description').textContent()) === 'ⓘ · 1.5 KB')
   if (process.env.ASSET_METER_EXPECT_RIGHT_ALIGNED === '1') {
@@ -165,6 +172,57 @@ try {
   assert.equal(await name('docs').count(), 0)
   assert.ok(await row('hero.png').locator('.file-icon').count(), 'file icon theme is used')
   await mkdir(path.join(root, 'artifacts'), { recursive: true })
+  if (expectColors) {
+    const severity = async (filename, variable) => {
+      await waitFor(async () => {
+        const size = row(filename).locator('.asset-meter-stat-size')
+        return await size.count() === 1 && await size.evaluate((element, expected) => element.style.color === `var(--vscode-${expected})`, variable)
+      })
+      const colors = await row(filename).evaluate((element, variable) => {
+        const description = element.querySelector('.label-description')
+        const size = description.querySelector('.asset-meter-stat-size')
+        const probe = document.createElement('span')
+        probe.style.color = `var(--vscode-${variable})`
+        description.append(probe)
+        const result = {
+          size: getComputedStyle(size).color,
+          expected: getComputedStyle(probe).color,
+          label: getComputedStyle(element.querySelector('.label-name')).color,
+          prefix: getComputedStyle(description).color,
+          neutralPrefix: description.firstChild.nodeType === Node.TEXT_NODE,
+          opacity: getComputedStyle(description).opacity,
+        }
+        probe.remove()
+        return result
+      }, variable)
+      assert.equal(colors.size, colors.expected, `${filename}: rendered size uses the theme severity color`)
+      assert.equal(colors.opacity, '1')
+      assert.ok(colors.neutralPrefix, 'counts and metadata indicators remain outside the colored span')
+      if (variable !== 'descriptionForeground') { assert.notEqual(colors.size, colors.prefix) }
+      return colors.label
+    }
+    const filenameColor = await severity('hero.png', 'assetMeter-sizeCritical')
+    await severity('assets', 'assetMeter-sizeCritical')
+    await severity('logo.svg', 'assetMeter-sizeWarning')
+    const mediumSvg = `<svg xmlns="http://www.w3.org/2000/svg">${' '.repeat(650)}</svg>`
+    await writeFile(path.join(workspace, 'assets/medium.svg'), mediumSvg)
+    await name('medium.svg').waitFor({ state: 'visible' })
+    await severity('medium.svg', 'assetMeter-sizeLarge')
+    settings['assetMeter.colorize'] = false
+    await writeFile(settingsFile, JSON.stringify(settings))
+    assert.equal(await severity('hero.png', 'descriptionForeground'), filenameColor, 'color settings do not recolor filenames')
+    settings['assetMeter.colorize'] = true
+    settings['assetMeter.fileColorThresholdsMiB'] = [1, 2, 3]
+    await writeFile(settingsFile, JSON.stringify(settings))
+    await severity('hero.png', 'descriptionForeground')
+    settings['assetMeter.fileColorThresholdsMiB'] = [0.00005, 0.0005, 0.001]
+    await writeFile(settingsFile, JSON.stringify(settings))
+    await severity('hero.png', 'assetMeter-sizeCritical')
+    await page.locator('.part.sidebar').screenshot({ path: path.join(root, 'artifacts/asset-tree-colors.png') })
+    await rm(path.join(workspace, 'assets/medium.svg'))
+    await name('medium.svg').waitFor({ state: 'detached' })
+    console.log('Statistics colors passed: yellow/orange/red match theme colors, counts and filenames stay neutral, and settings update live with Explorer badges disabled.')
+  }
   for (const [filename, relativePath, size] of [
     ['hero.png', 'assets/images/hero.png', '1.5 KB (1,536 bytes)'],
     ['logo.svg', 'assets/logo.svg', `${Buffer.byteLength(svg)} B (${Buffer.byteLength(svg)} bytes)`],
@@ -215,6 +273,13 @@ try {
   await name('hero.png').click({ button: 'right' })
   await page.getByRole('menuitem', { name: /Compress Image/ }).waitFor({ state: 'visible' })
   await page.getByRole('menuitem', { name: /Reveal in Explorer/ }).waitFor({ state: 'visible' })
+  const menuItems = page.getByRole('menuitem')
+  assert.ok((await menuItems.allTextContents()).every(label => !label.includes('Asset Meter:')), 'context menu labels omit the extension prefix')
+  assert.equal((await menuItems.last().textContent()).trim(), 'Delete', 'Delete is the last context action')
+  const deleteItem = page.getByRole('menuitem', { name: /^Delete$/ })
+  const separateGroup = await deleteItem.evaluate(element => element.closest('.action-item').previousElementSibling?.classList.contains('disabled'))
+  assert.ok(separateGroup, 'Delete follows a separate menu separator')
+  await page.screenshot({ path: path.join(root, 'artifacts/asset-tree-context-menu.png') })
   if (process.platform === 'darwin') { await page.getByRole('menuitem', { name: /Reveal in Finder/ }).waitFor({ state: 'visible' }) }
   await page.getByRole('menuitem', { name: /Open Image Details/ }).click()
   const detailsFrame = await waitFor(async () => {
@@ -235,8 +300,25 @@ try {
   console.log('Metadata UI passed: indicator, hover and native Markdown preview show the same embedded Author field.')
   await writeFile(path.join(workspace, 'assets/added.png'), Buffer.alloc(64))
   await name('added.png').waitFor({ state: 'visible' })
-  await rm(path.join(workspace, 'assets/added.png'))
+  const addedPath = path.join(workspace, 'assets/added.png')
+  await name('added.png').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /^Delete$/ }).click()
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Delete "added.png"?' })
+  await dialog.waitFor({ state: 'visible' })
+  assert.ok((await dialog.textContent()).includes(addedPath), 'confirmation identifies the exact resource path')
+  assert.equal((await readFile(addedPath)).length, 64, 'opening confirmation does not delete the resource')
+  await dialog.getByRole('button', { name: /Cancel/ }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal((await readFile(addedPath)).length, 64, 'cancelling keeps the resource')
+  await name('added.png').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /^Delete$/ }).click()
+  await dialog.waitFor({ state: 'visible' })
+  await page.screenshot({ path: path.join(root, 'artifacts/asset-tree-delete-confirmation.png') })
+  await dialog.getByRole('button', { name: /^Delete$/ }).click()
+  await dialog.waitFor({ state: 'hidden' })
   await name('added.png').waitFor({ state: 'detached' })
+  await assert.rejects(readFile(addedPath), { code: 'ENOENT' })
+  console.log('Delete UI passed: separate bottom action, exact path confirmation, cancel preserves the file, confirmed deletion refreshes the tree.')
   await pane.locator('.pane-header').hover()
   await pane.getByRole('button', { name: /Refresh Sizes/ }).click()
   await name('hero.png').waitFor({ state: 'visible' })

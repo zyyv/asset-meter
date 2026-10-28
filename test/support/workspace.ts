@@ -64,6 +64,11 @@ export async function createVscodeMock() {
     TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     ThemeIcon: { File: { id: 'file' }, Folder: { id: 'folder' } },
     FileType: { File: 1, Directory: 2, SymbolicLink: 64 },
+    window: {
+      showWarningMessage: vi.fn(),
+      showInformationMessage: vi.fn(),
+      showErrorMessage: vi.fn(),
+    },
     workspace: {
       get workspaceFolders() {
         return (state.workspaceRoots ?? [state.workspaceRoot]).map((root, index) => ({ uri: Uri.parse(root), name: posix.basename(Uri.parse(root).path), index }))
@@ -77,6 +82,7 @@ export async function createVscodeMock() {
       registerTextDocumentContentProvider: vi.fn(() => ({ dispose() {} })),
       registerFileSystemProvider: vi.fn(() => ({ dispose() {} })),
       fs: {
+        delete: vi.fn(async () => {}),
         readFile: vi.fn(async () => new Uint8Array([1, 2, 3])),
         stat: vi.fn(async (uri: Uri) => {
           await state.beforeStat?.(uri.toString())
@@ -113,4 +119,8 @@ export function resetWorkspace(vscode: typeof import('vscode')): void {
   state.entries.set(assets.toString(), { type: vscode.FileType.Directory, size: 0 })
   state.entries.set(logo.toString(), { type: vscode.FileType.File, size: 10 })
   vi.mocked(vscode.workspace.fs.readFile).mockResolvedValue(new Uint8Array([1, 2, 3]))
+  vi.mocked(vscode.workspace.fs.delete).mockReset().mockResolvedValue(undefined)
+  vi.mocked(vscode.window.showWarningMessage).mockReset()
+  vi.mocked(vscode.window.showInformationMessage).mockReset()
+  vi.mocked(vscode.window.showErrorMessage).mockReset()
 }

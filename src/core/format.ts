@@ -1,3 +1,4 @@
+import type { SizeSeverity } from './severity'
 import type { Metrics, Settings } from './types'
 
 export function formatSize(bytes: number, units: Settings['units'] = 'binary', places = 1): string {
@@ -19,6 +20,12 @@ export function compactSizeBadge(bytes: number, units: Settings['units']): strin
 export const nativeLabelMarker = '\u2063'
 export const nativeToneMarker = '\u2060'
 export const nativeHoverMarker = '\u2062'
+
+const severityTones: Record<SizeSeverity, number> = { normal: 1, warning: 2, large: 3, critical: 4 }
+
+export function nativeSizeLabel(text: string, severity: SizeSeverity, hover = false): string {
+  return `${nativeLabelMarker}${nativeToneMarker.repeat(severityTones[severity])}${hover ? nativeHoverMarker : ''}${text}${nativeLabelMarker}`
+}
 
 export function inlineLabel(metrics: Metrics, settings: Settings): string {
   const size = `${metrics.errors ? '≥ ' : ''}${formatSize(metrics.bytes, settings.units, settings.decimalPlaces)}`
