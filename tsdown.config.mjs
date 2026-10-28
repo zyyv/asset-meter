@@ -51,13 +51,14 @@ export default defineConfig([
         from: [
           '@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm',
           '@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm',
+          '@jsquash/png/codec/pkg/squoosh_png_bg.wasm',
           '@jsquash/webp/codec/dec/webp_dec.wasm',
           '@jsquash/webp/codec/enc/webp_enc.wasm',
           '@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm',
         ].map(file => require.resolve(file)),
         to: 'dist/codecs',
       },
-      ...['jpeg', 'webp', 'oxipng'].flatMap(codec => [
+      ...['jpeg', 'png', 'webp', 'oxipng'].flatMap(codec => [
         {
           from: require.resolve(`@jsquash/${codec}/LICENSE`),
           to: 'dist/codecs',

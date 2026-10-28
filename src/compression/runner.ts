@@ -4,9 +4,9 @@ import { Worker } from 'node:worker_threads'
 
 export interface CompressionJob { result: Promise<Uint8Array>, cancel: () => void }
 
-export function startCompression(distDirectory: string, bytes: Uint8Array, format: ImageFormat, quality: number): CompressionJob {
+export function startCompression(distDirectory: string, bytes: Uint8Array, format: ImageFormat, quality: number, outputFormat: ImageFormat = format): CompressionJob {
   const worker = new Worker(join(distDirectory, 'compression-worker.mjs'), {
-    workerData: { bytes, format, quality, wasmDirectory: join(distDirectory, 'codecs') },
+    workerData: { bytes, format, outputFormat, quality, wasmDirectory: join(distDirectory, 'codecs') },
   })
   let cancel = () => {}
   const result = new Promise<Uint8Array>((resolve, reject) => {
@@ -16,9 +16,11 @@ export function startCompression(distDirectory: string, bytes: Uint8Array, forma
       if (settled) { return }
       settled = true
       if (timeout) { clearTimeout(timeout) }
-      void worker.terminate()
-      if (error) { reject(error) }
-      else if (output) { resolve(output) }
+      // Keep the pool slot until the worker has actually released its resources.
+      void worker.terminate().then(() => {
+        if (error) { reject(error) }
+        else if (output) { resolve(output) }
+      }, reject)
     }
     timeout = setTimeout(() => finish(new Error('Compression exceeded 120 seconds. Try a smaller image.')), 120_000)
     cancel = () => finish(new Error('Compression cancelled.'))

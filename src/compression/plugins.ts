@@ -6,6 +6,7 @@ export interface CompressionInput {
   readonly bytes: Uint8Array
   readonly format: ImageFormat
   readonly quality: number
+  readonly outputFormat?: ImageFormat
 }
 
 export interface CompressionContext {
@@ -19,6 +20,10 @@ export interface CompressionPlugin {
   readonly label: string
   readonly description: string
   readonly formats: readonly ImageFormat[]
+  /** Additional output formats; omitted by plugins that only preserve the source format. */
+  readonly outputFormats?: readonly ImageFormat[]
+  /** Omit for configurable quality; automatic providers choose their own quality. */
+  readonly quality?: 'configurable' | 'automatic'
   describe: (input: CompressionInput) => string
   compress: (input: CompressionInput, context: CompressionContext) => CompressionJob
 }
@@ -44,20 +49,24 @@ export class CompressionRegistry {
     return plugin
   }
 
-  forFormat(format: ImageFormat): CompressionPlugin[] {
-    return [...this.plugins.values()].filter(plugin => plugin.formats.includes(format))
+  forFormat(format: ImageFormat, outputFormat: ImageFormat = format): CompressionPlugin[] {
+    return [...this.plugins.values()].filter(plugin => plugin.formats.includes(format)
+      && (outputFormat === format || plugin.outputFormats?.includes(outputFormat)))
   }
 
   start(id: string, input: CompressionInput, context: CompressionContext): CompressionJob {
     const plugin = this.get(id)
     if (!plugin.formats.includes(input.format)) { throw new Error(`${plugin.label} does not support ${input.format.toUpperCase()} images.`) }
+    const outputFormat = input.outputFormat ?? input.format
+    if (outputFormat !== input.format && !plugin.outputFormats?.includes(outputFormat)) {
+      throw new Error(`${plugin.label} does not support conversion to ${outputFormat.toUpperCase()}.`)
+    }
     validateImage(input.bytes, input.format)
     const job = plugin.compress(input, context)
     return {
       cancel: () => job.cancel(),
       result: job.result.then((bytes) => {
-        // Every plugin must return a valid static image in the original format.
-        validateImage(bytes, input.format)
+        validateImage(bytes, outputFormat)
         return bytes
       }),
     }

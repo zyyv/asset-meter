@@ -9,10 +9,19 @@ export function assetResource(resource?: AssetResource): vscode.Uri | undefined 
   return resource && 'uri' in resource ? resource.uri : resource
 }
 
+export function assetResources(resource?: AssetResource, selection?: readonly AssetResource[]): vscode.Uri[] {
+  const clicked = assetResource(resource)
+  // Editor title actions can pass editor context as the second argument.
+  const uris = Array.isArray(selection) ? selection.map(item => assetResource(item)!) : []
+  const selected = clicked && !uris.some(uri => uri.toString() === clicked.toString()) ? [clicked] : uris
+  return [...new Map(selected.map(uri => [uri.toString(), uri])).values()]
+}
+
 interface ResourceActions {
   openSvg: (uri: vscode.Uri) => unknown
   previewImage: (uri?: vscode.Uri) => unknown
   compressImage: (uri?: vscode.Uri) => unknown
+  compressImages: (uris: readonly vscode.Uri[]) => unknown
   copyRelativePath: (uri?: vscode.Uri) => unknown
   copyAbsolutePath: (uri?: vscode.Uri) => unknown
   copyImage: (uri?: vscode.Uri) => unknown
@@ -23,7 +32,11 @@ export function registerResourceActions(actions: ResourceActions): vscode.Dispos
   return vscode.Disposable.from(
     vscode.commands.registerCommand('assetMeter.openSvg', (uri: vscode.Uri) => actions.openSvg(uri)),
     vscode.commands.registerCommand('assetMeter.previewImage', (resource?: AssetResource) => actions.previewImage(assetResource(resource))),
-    vscode.commands.registerCommand('assetMeter.compressImage', (resource?: AssetResource) => actions.compressImage(assetResource(resource))),
+    vscode.commands.registerCommand('assetMeter.compressImage', (resource?: AssetResource, selection?: readonly AssetResource[]) => {
+      const uris = assetResources(resource, selection)
+      return uris.length > 1 ? actions.compressImages(uris) : actions.compressImage(uris[0])
+    }),
+    vscode.commands.registerCommand('assetMeter.compressImages', (resource?: AssetResource, selection?: readonly AssetResource[]) => actions.compressImages(assetResources(resource, selection))),
     vscode.commands.registerCommand('assetMeter.copyRelativePath', (resource?: AssetResource) => actions.copyRelativePath(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.copyAbsolutePath', (resource?: AssetResource) => actions.copyAbsolutePath(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.copyImage', (resource?: AssetResource) => actions.copyImage(assetResource(resource))),

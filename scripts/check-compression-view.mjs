@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const executable = process.env.VSCODE_EXECUTABLE_PATH
 if (!executable) { throw new Error('Set VSCODE_EXECUTABLE_PATH to a VS Code executable. This check uses a temporary workspace and profile.') }
-const temporary = await mkdtemp(path.join(tmpdir(), 'asset-meter-compression-ui-'))
+const temporary = await mkdtemp(path.join(tmpdir(), 'amc-'))
 const workspace = path.join(temporary, 'workspace')
 const profile = path.join(temporary, 'profile')
 let child
@@ -74,6 +74,8 @@ try {
     'extensions.autoUpdate': false,
     'chat.disableAIFeatures': true,
     'window.restoreWindows': 'none',
+    'window.menuStyle': 'custom',
+    'window.dialogStyle': 'custom',
     'security.workspace.trust.enabled': false,
     'files.simpleDialog.enable': true,
     'workbench.editorAssociations': {
@@ -240,6 +242,66 @@ try {
   assert.equal(await page.locator('.quick-input-widget').isVisible(), false, 'Remembered permission skips the save question')
   await discard(frame)
   console.log('Compression UI: JPEG/WebP, Always Allow persistence and explicit save after comparison passed.')
+
+  const prefix = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.press(`${prefix}+Shift+E`)
+  const header = page.locator('.pane-header').filter({ hasText: /^Asset Meter$/i })
+  await header.waitFor({ state: 'visible' })
+  if (await header.getAttribute('aria-expanded') === 'false') { await header.click() }
+  const pane = header.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " pane ")][1]')
+  const image = extension => pane.locator('.label-name').filter({ hasText: new RegExp(`^sample\\.${extension}$`) })
+  const sources = await Promise.all(['png', 'jpg'].map(extension => readFile(path.join(workspace, `sample.${extension}`))))
+  await image('png').click()
+  await image('jpg').click({ modifiers: [prefix] })
+  assert.equal(await pane.locator('.monaco-list-row.selected').count(), 2, 'Asset Meter supports multi-selection')
+  await image('jpg').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Compress / Convert Images…', exact: true }).click()
+  for (const format of ['Keep original format', 'JPEG', 'PNG', 'WebP']) {
+    assert.equal(await page.getByText(format, { exact: true }).last().isVisible(), true, `${format} output is offered`)
+  }
+  await page.getByText('WebP', { exact: true }).last().click()
+  assert.equal(await page.getByText('TinyPNG', { exact: true }).count(), 0, 'Only compatible plugins are offered for conversion')
+  await page.getByText('jSquash', { exact: true }).last().click()
+  await quickInput().waitFor({ state: 'visible' })
+  assert.equal(await quickInput().inputValue(), '75', 'Quality starts with the configured value')
+  await quickInput().fill('82')
+  await page.keyboard.press('Enter')
+  await waitFor(async () => (await readFile(path.join(workspace, 'sample.compressed-2.webp'))).length > 0, 'two batch outputs with distinct names')
+  await page.getByText(/Asset Meter: Finished: 2 saved, 0 skipped, 0 failed/).last().waitFor()
+  for (const [index, extension] of ['png', 'jpg'].entries()) {
+    assert.deepEqual(await readFile(path.join(workspace, `sample.${extension}`)), sources[index], 'Batch conversion preserves originals even with remembered overwrite permission')
+  }
+  for (const name of ['sample.compressed.webp', 'sample.compressed-2.webp']) {
+    const output = await readFile(path.join(workspace, name))
+    assert.equal(output.toString('ascii', 8, 12), 'WEBP')
+  }
+  await page.screenshot({ path: path.join(root, 'artifacts/batch-compression-result.png') })
+  console.log('Compression UI: Asset Meter multi-selection, output formats, quality selection, WebP conversion, collision-safe copies and completion notification passed.')
+
+  for (const [source, format, name, quality] of [
+    ['jpg', 'PNG', 'sample.compressed-2.png', undefined],
+    ['png', 'JPEG', 'sample.compressed.jpg', '60'],
+  ]) {
+    await image(source).click()
+    await image(source).click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Compress / Convert Images…', exact: true }).click()
+    await page.getByText(format, { exact: true }).last().click()
+    await page.getByText('jSquash', { exact: true }).last().click()
+    if (quality) {
+      await quickInput().waitFor({ state: 'visible' })
+      await quickInput().fill(quality)
+      await page.keyboard.press('Enter')
+    }
+    await waitFor(async () => (await readFile(path.join(workspace, name))).length > 0, `${format} output saved`)
+    await page.getByText(/Asset Meter: Finished: 1 saved, 0 skipped, 0 failed/).last().waitFor()
+    const bytes = await readFile(path.join(workspace, name))
+    if (format === 'PNG') {
+      assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a')
+      assert.equal(await page.locator('.quick-input-widget').isVisible(), false, 'Lossless PNG does not ask for quality')
+    }
+    else { assert.equal(bytes.subarray(0, 2).toString('hex'), 'ffd8') }
+  }
+  console.log('Compression UI: JPEG and PNG conversion, adjustable JPEG quality, lossless PNG and matching output extensions passed.')
 }
 catch (error) {
   if (page) {

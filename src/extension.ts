@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { AssetTreeProvider } from './assetTree'
 import { AssetTreeActions } from './assetTreeActions'
+import { BatchImageCompression } from './compression/batch'
 import { ImageCompression } from './compression/preview'
 import { SizeDecorationProvider } from './decorations'
 import { ImageClipboard } from './imageClipboard'
@@ -35,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   const refresh = (uris: readonly vscode.Uri[]) => {
     void service.refresh(uris).catch(error => output.error('Failed to refresh sizes.', error))
   }
-  const compression = new ImageCompression(context, uri => refresh([uri]))
+  const compression = new ImageCompression(context, uri => refresh([uri]), output)
   const svgPreview = new SvgPreview(output)
   const readPatchStatus = () => getNativePatchStatus(vscode.env.appRoot).catch((error) => {
     output.error('Failed to read native Explorer patch status.', error)
@@ -45,7 +46,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
   // Written program files take effect only in a freshly started extension host.
   const nativePatchActive = patchStatus.installed && Date.now() - process.uptime() * 1000 >= patchStatus.appliedAt
   const assetTree = new AssetTreeProvider(service, output, metadata, nativePatchActive)
-  const assetView = vscode.window.createTreeView('assetMeter.explorer', { treeDataProvider: assetTree, showCollapseAll: true })
+  const assetView = vscode.window.createTreeView('assetMeter.explorer', { treeDataProvider: assetTree, showCollapseAll: true, canSelectMany: true })
   const decorations = new SizeDecorationProvider(service, nativePatchActive, output)
   const logRenderingStatus = (uri?: vscode.Uri, status = patchStatus) => {
     const badges = vscode.workspace.getConfiguration('explorer', uri).get('decorations.badges', true)
@@ -74,6 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     const delay = vscode.workspace.getConfiguration('assetMeter').get('refreshDelay', 400)
     timer = setTimeout(flush, delay)
   }
+  const batchCompression = new BatchImageCompression(context, compression.executor, queue, output)
   const watchers = new Map<string, vscode.Disposable>()
   const watchWorkspace = () => {
     for (const watcher of watchers.values()) { watcher.dispose() }
@@ -100,6 +102,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     assetView,
     decorations,
     compression,
+    batchCompression,
     svgPreview,
     imageClipboard,
     vscode.commands.registerCommand('assetMeter.openFile', (uri: vscode.Uri) => assetActions.open(uri)),
@@ -107,6 +110,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
       openSvg: uri => svgPreview.open(uri),
       previewImage: uri => imageDetails.open(uri),
       compressImage: uri => compression.compress(uri),
+      compressImages: uris => batchCompression.compress(uris),
       copyRelativePath: uri => uri && assetActions.copy(uri, 'relative'),
       copyAbsolutePath: uri => uri && assetActions.copy(uri, 'absolute'),
       copyImage: uri => uri && assetActions.copy(uri, 'image'),

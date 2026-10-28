@@ -14,10 +14,11 @@ export function imageFormat(path: string): ImageFormat | undefined {
   }
 }
 
-export function compressedName(path: string): string {
+export function compressedName(path: string, outputFormat?: ImageFormat): string {
   const name = basename(path)
   const extension = extname(name)
-  return `${name.slice(0, -extension.length)}.compressed${extension}`
+  const outputExtension = outputFormat && outputFormat !== imageFormat(path) ? `.${outputFormat === 'jpeg' ? 'jpg' : outputFormat}` : extension
+  return `${name.slice(0, -extension.length)}.compressed${outputExtension}`
 }
 
 export function assertDimensions(width: number, height: number): void {

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Offer JPEG, PNG and WebP output formats with per-run JPEG/WebP quality, lossless PNG conversion and a white background when converting transparent images to JPEG.
+
+- Add multi-select compression and local WebP conversion in the Asset Meter panel and Explorer, with a shared bounded worker task pool, configurable batches, cancellable notification progress and per-image logs.
+- Save batch results as new copies with collision-safe filenames, preserving originals and continuing after individual failures.
+
 - Replace double-click copying with a separate Asset Meter context menu group for copying relative paths, absolute paths and supported images, and remove the copy behavior setting.
 - Show compact badges or an information indicator in always mode without the native patch, with exact sizes and patch instructions in tooltips.
 - Add an Asset Meter Output log, Show Logs and Diagnose File Matching commands, per-resource Debug logs, and visible filesystem/decoration errors.

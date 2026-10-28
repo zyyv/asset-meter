@@ -89,6 +89,21 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 
 其他扩展可通过 `await vscode.extensions.getExtension('zyyv.asset-meter').activate()` 获取 API，调用 `api.registerCompressionPlugin(plugin)` 并将返回的 disposable 加入订阅。插件实现 `src/compression/plugins.ts` 中的 `CompressionPlugin` 接口：提供 ID、名称、说明、支持的格式、`describe(input)`，以及返回 `{ result: Promise<Uint8Array>, cancel() }` 的 `compress(input, context)`。选择列表和对比页会自动发现已注册插件；插件负责配置与编码，共用流程负责校验输入输出、对比和保存。
 
+## 批量压缩、格式转换与画质
+
+在 **Asset Meter** 面板中，用 **Cmd/Ctrl + 点击** 多选图片，或用 **Shift + 点击** 连续选择；右键选中的图片，选择 **Compress / Convert Images…**。Explorer 右键菜单也提供此命令，在命令面板运行则会打开多文件选择器。
+
+1. 选择输出格式：**JPEG**、**PNG**、**WebP**，或 **Keep original format**（默认，保留原格式）。
+2. 选择兼容的插件。**jSquash** 支持 JPEG、PNG、WebP 本地互转；PNG/WebP 保留透明度，JPEG 将透明区域合成到白色背景，JPEG 方向会应用到像素。保留格式时也可选择 TinyPNG。
+3. 对支持手动画质的 JPEG/WebP 输出，输入 **1–100 的画质**，初始值取配置（默认 75）。PNG 使用无损编码；TinyPNG 等自动处理画质的插件不显示此输入框。
+4. 在通知进度条中查看已完成/总数及成功、跳过、失败数量，可随时取消。完成通知中的 **Show Logs** 打开 Asset Meter 输出日志，记录批次 ID、文件路径、前后大小、耗时和错误。
+
+结果保存在原图旁，使用所选格式的扩展名，例如 `name.compressed.jpg`、`name.compressed.png` 或 `name.compressed.webp`；重名时自动使用 `name.compressed-2.webp` 等编号，保留已有文件和原图。批量命令直接保存副本，不为每张图片打开对比页。同格式压缩未变小时跳过；明确转换格式时，即使体积增加也会保存。单张失败不会中断其他图片。取消会停止排队任务和正在编码的任务，已保存的副本保留。
+
+单图预览和批量任务共用先进先出的任务池，默认同时处理 **2 张**（最多 4 张，并尽可能预留一个 CPU）。本地编码在独立 worker 中运行，每个任务槽涵盖读取、编码和保存，排队图片不会预先加载到内存。大任务默认每 **50 张**分一批。通过 `assetMeter.compression.concurrency` 设置并发数（1–4，修改后重新加载窗口），通过 `assetMeter.compression.batchSize` 设置每批数量（1–200）。输入大小、像素数和动画限制沿用单图规则。
+
+压缩插件可选声明 `outputFormats` 并读取 `input.outputFormat` 来支持转换；自动处理画质的插件可声明 `quality: "automatic"`；未声明的插件仍只保留源格式。所有输出都会按请求格式校验。
+
 ## 配置
 
 打开 **设置 → 扩展 → Asset Meter**，或将以下示例放入 `.vscode/settings.json`：

@@ -41,6 +41,7 @@ export function createTinyPngPlugin(request: typeof fetch = fetch, timeoutMs = 1
     label: 'TinyPNG',
     description: 'Cloud · uploads images to TinyPNG; API key required',
     formats: ['jpeg', 'png', 'webp'],
+    quality: 'automatic',
     describe: ({ format }) => `${format.toUpperCase()} · automatic optimization`,
     compress: ({ bytes }, context) => {
       const apiKey = context.getSetting('tinypng.apiKey', '').trim()

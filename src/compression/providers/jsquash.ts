@@ -6,6 +6,7 @@ export const jsquashPlugin: CompressionPlugin = {
   label: 'jSquash',
   description: 'Local · no uploads or API key',
   formats: ['jpeg', 'png', 'webp'],
-  describe: ({ format, quality }) => format === 'png' ? 'Lossless PNG' : `${format.toUpperCase()} · quality ${quality}`,
-  compress: ({ bytes, format, quality }, { distDirectory }) => startCompression(distDirectory, bytes, format, quality),
+  outputFormats: ['jpeg', 'png', 'webp'],
+  describe: ({ format, outputFormat = format, quality }) => outputFormat === 'png' ? 'Lossless PNG' : `${outputFormat.toUpperCase()} · quality ${quality}`,
+  compress: ({ bytes, format, quality, outputFormat }, { distDirectory }) => startCompression(distDirectory, bytes, format, quality, outputFormat),
 }

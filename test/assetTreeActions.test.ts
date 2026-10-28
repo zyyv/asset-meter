@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { AssetTreeActions } from '../src/assetTreeActions'
 import { ImageClipboard } from '../src/imageClipboard'
-import { registerResourceActions } from '../src/resourceActions'
+import { assetResources, registerResourceActions } from '../src/resourceActions'
 
 vi.mock('vscode', () => ({
   Disposable: { from: (...subscriptions: vscode.Disposable[]) => ({ dispose: () => subscriptions.forEach(subscription => subscription.dispose()) }) },
@@ -131,6 +131,7 @@ it.each(['copyRelativePath', 'copyAbsolutePath', 'copyImage'] as const)('passes 
     openSvg: vi.fn(),
     previewImage: vi.fn(),
     compressImage: vi.fn(),
+    compressImages: vi.fn(),
     copyRelativePath: copy,
     copyAbsolutePath: copy,
     copyImage: copy,
@@ -143,4 +144,41 @@ it.each(['copyRelativePath', 'copyAbsolutePath', 'copyImage'] as const)('passes 
   expect(copy.mock.calls).toEqual([[uri], [uri]])
   expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
   subscription.dispose()
+})
+
+it('resolves multi-selection without duplicates and uses only an unselected right-click target', () => {
+  const first = file('/workspace/assets/first.png')
+  const second = file('/workspace/assets/second.jpg')
+  const outside = file('/workspace/assets/other.webp')
+  expect(assetResources({ uri: first }, [{ uri: first }, second, first])).toEqual([first, second])
+  expect(assetResources(outside, [first, second])).toEqual([outside])
+  expect(assetResources()).toEqual([])
+})
+
+it('routes tree nodes and Explorer URI multi-selection to batch compression', () => {
+  const compressImage = vi.fn()
+  const compressImages = vi.fn()
+  registerResourceActions({
+    openSvg: vi.fn(),
+    previewImage: vi.fn(),
+    compressImage,
+    compressImages,
+    copyRelativePath: vi.fn(),
+    copyAbsolutePath: vi.fn(),
+    copyImage: vi.fn(),
+    deleteResource: vi.fn(),
+  })
+  const command = (id: string) => vi.mocked(vscode.commands.registerCommand).mock.calls.find(([name]) => name === id)![1]
+  const first = file('/workspace/assets/first.png')
+  const second = file('/workspace/assets/second.jpg')
+  command('assetMeter.compressImage')({ uri: first }, [{ uri: first }, { uri: second }])
+  command('assetMeter.compressImage')(first, [first, second])
+  command('assetMeter.compressImages')({ uri: first }, [{ uri: first }])
+  expect(compressImages.mock.calls).toEqual([[[first, second]], [[first, second]], [[first]]])
+  expect(compressImage).not.toHaveBeenCalled()
+  command('assetMeter.compressImage')(first)
+  expect(compressImage).toHaveBeenCalledExactlyOnceWith(first)
+  command('assetMeter.compressImage')(first, { groupId: 1 })
+  expect(compressImage).toHaveBeenCalledTimes(2)
+  expect(compressImage).toHaveBeenLastCalledWith(first)
 })

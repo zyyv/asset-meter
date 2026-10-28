@@ -1,28 +1,31 @@
+import type { Logger } from '../log'
 import type { ImageFormat, SaveBehavior } from './image'
 import type { CompressionPlugin } from './plugins'
 import type { CompressionJob } from './runner'
 import { createHash, randomBytes } from 'node:crypto'
+import { availableParallelism } from 'node:os'
 import { basename, posix } from 'node:path'
 import * as vscode from 'vscode'
 import { formatSize as formatBytes } from '../core/format'
+import { silentLogger } from '../log'
+import { CompressionExecutor } from './executor'
 import { compressedName, imageFormat, maxInputBytes, validateImage } from './image'
-import { CompressionRegistry } from './plugins'
-import { jsquashPlugin } from './providers/jsquash'
-import { createTinyPngPlugin } from './providers/tinypng'
+import { boundedSetting } from './settings'
 
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[character]!)
 
 export class ImageCompression implements vscode.Disposable {
-  readonly plugins = new CompressionRegistry()
+  readonly executor: CompressionExecutor
+  get plugins() { return this.executor.plugins }
   private readonly jobs = new Set<CompressionJob>()
   private readonly pending = new Set<string>()
   private readonly panels = new Set<vscode.WebviewPanel>()
   private disposed = false
 
-  constructor(private readonly context: vscode.ExtensionContext, private readonly onSaved: (uri: vscode.Uri) => void) {
-    this.plugins.register(jsquashPlugin)
-    this.plugins.register(createTinyPngPlugin())
+  constructor(private readonly context: vscode.ExtensionContext, private readonly onSaved: (uri: vscode.Uri) => void, private readonly log: Logger = silentLogger) {
+    const concurrency = vscode.workspace.getConfiguration('assetMeter.compression').get('concurrency', 2)
+    this.executor = new CompressionExecutor(Math.min(boundedSetting(concurrency, 2, 4), Math.max(1, availableParallelism() - 1)))
   }
 
   async compress(resource?: vscode.Uri): Promise<void> {
@@ -59,6 +62,7 @@ export class ImageCompression implements vscode.Disposable {
     }
     catch (error) {
       if (error instanceof Error && error.message === 'Compression cancelled.') { return }
+      this.log.error(`Compression failed: ${uri.toString()}`, error)
       void vscode.window.showErrorMessage(`Asset Meter compression failed: ${error instanceof Error ? error.message : String(error)}`)
     }
     finally { this.pending.delete(key) }
@@ -76,12 +80,24 @@ export class ImageCompression implements vscode.Disposable {
       location: vscode.ProgressLocation.Notification,
       title: `Compressing ${basename(uri.path)} with ${plugin.label}…`,
       cancellable: true,
-    }, async (_progress, token) => {
+    }, async (progress, token) => {
       if (this.disposed || token.isCancellationRequested) { throw new Error('Compression cancelled.') }
-      const job = this.plugins.start(plugin.id, this.compressionInput(uri, bytes, format), {
-        distDirectory: vscode.Uri.joinPath(this.context.extensionUri, 'dist').fsPath,
-        getSetting: (key, fallback) => vscode.workspace.getConfiguration('assetMeter.compression', uri).get(key, fallback),
-      })
+      const controller = new AbortController()
+      progress.report({ increment: 0, message: 'Waiting for a compression slot…' })
+      const job: CompressionJob = {
+        cancel: () => controller.abort(),
+        result: this.executor.pool.run(async (signal) => {
+          progress.report({ message: 'Encoding…' })
+          this.log.info(`Compressing ${uri.toString()} with ${plugin.id}.`)
+          const result = await this.executor.encode(plugin.id, this.compressionInput(uri, bytes, format), {
+            distDirectory: vscode.Uri.joinPath(this.context.extensionUri, 'dist').fsPath,
+            getSetting: (key, fallback) => vscode.workspace.getConfiguration('assetMeter.compression', uri).get(key, fallback),
+          }, signal)
+          this.log.info(`Compressed ${uri.toString()}: ${bytes.length} → ${result.length} bytes.`)
+          progress.report({ increment: 100, message: 'Ready to compare' })
+          return result
+        }, controller.signal),
+      }
       this.jobs.add(job)
       onJob?.(job)
       const cancellation = token.onCancellationRequested(() => job.cancel())
@@ -253,6 +269,7 @@ figure { margin: 0; min-width: 0; background: var(--vscode-editor-background); }
 
   dispose(): void {
     this.disposed = true
+    this.executor.dispose()
     for (const job of this.jobs) { job.cancel() }
     for (const panel of this.panels) { panel.dispose() }
     this.jobs.clear(); this.panels.clear()

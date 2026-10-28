@@ -89,6 +89,21 @@ Failed API calls show an error and leave the original unchanged. A failed **Comp
 
 Other extensions can register compressors through `await vscode.extensions.getExtension('zyyv.asset-meter').activate()`, then call `api.registerCompressionPlugin(plugin)` and add the returned disposable to their subscriptions. Plugins implement `CompressionPlugin` in `src/compression/plugins.ts`: an ID, label, description, supported formats, `describe(input)`, and `compress(input, context)` returning `{ result: Promise<Uint8Array>, cancel() }`. The picker and comparison dropdown discover registered plugins automatically. Plugins own their settings and encoding; the shared flow validates inputs and outputs, displays the comparison, and handles saving.
 
+## Batch compression, format conversion and quality
+
+In the **Asset Meter** panel, use **Cmd/Ctrl-click** to select images or **Shift-click** to select a range. Right-click a selected image and choose **Compress / Convert Images…**. The same command is available in Explorer and the Command Palette (with a multi-file picker).
+
+1. Choose the output format: **JPEG**, **PNG**, **WebP**, or **Keep original format** (default).
+2. Choose a compatible plugin. **jSquash** supports local conversion between JPEG, PNG and WebP. PNG/WebP preserve transparency; JPEG composites transparent pixels onto white. JPEG orientation is applied to the pixels. TinyPNG is available when preserving formats.
+3. For JPEG/WebP with a configurable plugin, enter **quality from 1 to 100** (initially the configured value, default 75). PNG uses lossless encoding; automatic providers such as TinyPNG choose their own quality.
+4. Follow the cancellable notification progress bar. It shows completed/total images and saved, skipped and failed counts. **Show Logs** opens the Asset Meter Output log with batch IDs, paths, sizes, durations and errors.
+
+Results are saved beside each source with the selected extension, such as `name.compressed.jpg`, `name.compressed.png` or `name.compressed.webp`. Existing outputs are preserved with numbered names such as `name.compressed-2.webp`; sources are never overwritten by this command. Batch processing saves copies directly, without opening a comparison for each image. Same-format results that are not smaller are skipped; explicit format conversions are saved even if larger. A failed image does not stop the remaining images. Cancellation stops queued and active encoding work; already saved copies remain.
+
+Previews and batches share a FIFO task pool with **2 simultaneous tasks** by default (at most 4, leaving one CPU available when possible). Local encoding runs in separate workers. A slot covers reading, encoding and saving, so queued images do not consume image-buffer memory. Large selections are queued in batches of **50**. Configure `assetMeter.compression.concurrency` (1–4; reload after changing) and `assetMeter.compression.batchSize` (1–200). Existing input size, pixel and animation limits apply.
+
+Compression plugins can optionally declare `outputFormats` for conversion, read `input.outputFormat`, and declare `quality: "automatic"` when manual quality does not apply; plugins without that property continue preserving the source format. All outputs are validated against the requested format.
+
 ## Configuration
 
 Open **Settings → Extensions → Asset Meter**, or add this example to `.vscode/settings.json`:

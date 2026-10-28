@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import decodeJpeg, { init as initJpeg } from '@jsquash/jpeg/decode.js'
+import decodePng, { init as initPng } from '@jsquash/png/decode.js'
+import decodeWebp, { init as initWebp } from '@jsquash/webp/decode.js'
 import { it } from 'vitest'
 import { compressedName, imageFormat, maxInputBytes, validateImage } from '../src/compression/image'
 import { CompressionRegistry } from '../src/compression/plugins'
@@ -10,6 +13,18 @@ import { startCompression } from '../src/compression/runner'
 
 const fixture = (name: string) => readFile(path.join(__dirname, 'fixtures', name))
 const dist = path.resolve(__dirname, '../dist')
+async function webpPixels(bytes: Uint8Array) {
+  await (initWebp as (module: WebAssembly.Module) => Promise<unknown>)(await WebAssembly.compile(await readFile(path.join(dist, 'codecs/webp_dec.wasm'))))
+  return decodeWebp(Uint8Array.from(bytes).buffer)
+}
+async function pngPixels(bytes: Uint8Array) {
+  await initPng(await WebAssembly.compile(await readFile(path.join(dist, 'codecs/squoosh_png_bg.wasm'))))
+  return decodePng(Uint8Array.from(bytes).buffer)
+}
+async function jpegPixels(bytes: Uint8Array) {
+  await (initJpeg as (module: WebAssembly.Module) => Promise<unknown>)(await WebAssembly.compile(await readFile(path.join(dist, 'codecs/mozjpeg_dec.wasm'))))
+  return decodeJpeg(Uint8Array.from(bytes).buffer)
+}
 function pluginContext(apiKey = '') {
   return {
     distDirectory: dist,
@@ -25,6 +40,10 @@ it('supported image formats and Save As names preserve extension and basename', 
   assert.equal(imageFormat('/assets/animated.gif'), undefined)
   assert.equal(imageFormat('/assets/logo.svg'), undefined)
   assert.equal(compressedName('/assets/hero.final.JPG'), 'hero.final.compressed.JPG')
+  assert.equal(compressedName('/assets/hero.final.JPG', 'webp'), 'hero.final.compressed.webp')
+  assert.equal(compressedName('/assets/hero.WEBP', 'webp'), 'hero.compressed.WEBP')
+  assert.equal(compressedName('/assets/hero.webp', 'jpeg'), 'hero.compressed.jpg')
+  assert.equal(compressedName('/assets/hero.jpg', 'png'), 'hero.compressed.png')
 })
 
 for (const [name, format] of [['sample.jpg', 'jpeg'], ['sample.png', 'png'], ['sample.webp', 'webp']] as const) {
@@ -37,6 +56,61 @@ for (const [name, format] of [['sample.jpg', 'jpeg'], ['sample.png', 'png'], ['s
     assert.deepEqual(original, snapshot)
   })
 }
+
+for (const [name, format] of [['sample.jpg', 'jpeg'], ['sample.png', 'png'], ['sample.webp', 'webp']] as const) {
+  for (const outputFormat of ['jpeg', 'png', 'webp'] as const) {
+    if (outputFormat === format) { continue }
+    it(`packaged WASM converts ${format} to ${outputFormat} while keeping the source unchanged`, async () => {
+      const original = await fixture(name)
+      const snapshot = Buffer.from(original)
+      const registry = new CompressionRegistry()
+      registry.register(jsquashPlugin)
+      const output = await registry.start('jsquash', { bytes: original, format, outputFormat, quality: 75 }, pluginContext()).result
+      validateImage(output, outputFormat)
+      assert.deepEqual(original, snapshot)
+      const decoded = await (outputFormat === 'png' ? pngPixels(output) : outputFormat === 'jpeg' ? jpegPixels(output) : webpPixels(output))
+      assert.deepEqual([decoded.width, decoded.height], [256, 160])
+      if (format === 'png' && outputFormat === 'webp') {
+        const source = await pngPixels(original)
+        const alpha = (pixels: Uint8ClampedArray) => pixels.filter((_value, index) => index % 4 === 3)
+        assert.deepEqual(alpha(decoded.data), alpha(source.data), 'WebP conversion preserves every alpha value')
+      }
+      if (outputFormat === 'png') {
+        const source = await (format === 'jpeg' ? jpegPixels(original) : webpPixels(original))
+        assert.deepEqual(decoded.data, source.data, 'PNG conversion preserves every decoded pixel')
+      }
+    })
+  }
+}
+
+it('converts transparent pixels to a white JPEG background', async () => {
+  const { default: init, optimise_raw: encode } = await import('@jsquash/oxipng/codec/pkg/squoosh_oxipng.js')
+  await init(await WebAssembly.compile(await readFile(path.join(dist, 'codecs/squoosh_oxipng_bg.wasm'))))
+  const transparent = encode(new Uint8ClampedArray([255, 0, 0, 0]), 1, 1, 2, false, false)
+  const output = await startCompression(dist, transparent, 'png', 90, 'jpeg').result
+  assert.deepEqual([...(await jpegPixels(output)).data], [255, 255, 255, 255])
+})
+
+it('uses the selected JPEG / WebP quality when converting from PNG', async () => {
+  const original = await fixture('sample.png')
+  for (const format of ['jpeg', 'webp'] as const) {
+    const low = await startCompression(dist, original, 'png', 20, format).result
+    const high = await startCompression(dist, original, 'png', 95, format).result
+    assert.ok(low.length < high.length, `${format}: lower quality should produce a smaller result for this fixture`)
+    validateImage(low, format); validateImage(high, format)
+  }
+})
+
+it('conversion discovery excludes format-preserving plugins and validates the requested output', async () => {
+  const registry = new CompressionRegistry()
+  registry.register(jsquashPlugin)
+  registry.register(createTinyPngPlugin())
+  assert.deepEqual(registry.forFormat('png', 'webp').map(plugin => plugin.id), ['jsquash'])
+  const input = { bytes: await fixture('sample.png'), format: 'png' as const, outputFormat: 'webp' as const, quality: 75 }
+  assert.throws(() => registry.start('tinypng', input, pluginContext('test-key')), /does not support conversion/)
+  registry.register({ ...jsquashPlugin, id: 'wrong-conversion', compress: () => ({ result: fixture('sample.png'), cancel() {} }) })
+  await assert.rejects(registry.start('wrong-conversion', input, pluginContext()).result, /not a valid WEBP/)
+})
 
 it('compression can be cancelled and the worker is terminated', async () => {
   const job = startCompression(dist, await fixture('sample.png'), 'png', 75)
@@ -62,6 +136,8 @@ it('jpeg EXIF orientation is applied before metadata is removed', async () => {
     offset += length + 2
   }
   assert.deepEqual(dimensions, [160, 256], 'The displayed orientation is preserved in the encoded pixels')
+  const converted = await webpPixels(await startCompression(dist, oriented, 'jpeg', 75, 'webp').result)
+  assert.deepEqual([converted.width, converted.height], [160, 256], 'WebP conversion also applies the EXIF orientation')
 })
 
 it('animation is rejected before a static encoder can discard frames', async () => {

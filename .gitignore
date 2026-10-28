@@ -6,3 +6,4 @@ artifacts/
 *.vsix
 .DS_Store
 .pnpm-store/
+examples

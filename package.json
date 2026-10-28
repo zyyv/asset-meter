@@ -156,6 +156,12 @@
         "icon": "$(fold)"
       },
       {
+        "command": "assetMeter.compressImages",
+        "title": "Compress / Convert Images…",
+        "category": "Asset Meter",
+        "icon": "$(fold)"
+      },
+      {
         "command": "assetMeter.installNativePatch",
         "title": "Install / Reapply Native Explorer Patch",
         "category": "Asset Meter"
@@ -196,7 +202,7 @@
           "group": "navigation@2"
         },
         {
-          "command": "assetMeter.compressImage",
+          "command": "assetMeter.compressImages",
           "when": "view == assetMeter.explorer && viewItem == assetMeter.image",
           "group": "assetMeter@1"
         },
@@ -266,6 +272,11 @@
           "command": "assetMeter.compressImage",
           "when": "resourceExtname =~ /\\.(jpe?g|jpe|png|webp)$/i",
           "group": "7_modification@91"
+        },
+        {
+          "command": "assetMeter.compressImages",
+          "when": "resourceExtname =~ /\\.(jpe?g|jpe|png|webp)$/i",
+          "group": "7_modification@91.5"
         },
         {
           "command": "assetMeter.diagnose",
@@ -501,7 +512,23 @@
           ],
           "default": "ask",
           "scope": "application",
-          "description": "Remembered save permission. Comparison is always shown before saving. Set to ask to reset Always Allow. Only User Settings can grant this permission."
+          "description": "Remembered save permission for single-image comparisons. Batch compression always saves new copies. Set to ask to reset Always Allow. Only User Settings can grant this permission."
+        },
+        "assetMeter.compression.concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "default": 2,
+          "scope": "application",
+          "description": "Maximum simultaneous compression tasks shared by single-image previews and batches. Capped to leave one CPU available when possible. Reload the window after changing."
+        },
+        "assetMeter.compression.batchSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 50,
+          "scope": "application",
+          "description": "Maximum number of images queued per batch. The next batch starts after the current batch finishes; images are read only when a compression slot is available."
         }
       }
     }
@@ -523,6 +550,7 @@
   "dependencies": {
     "@jsquash/jpeg": "^1.6.0",
     "@jsquash/oxipng": "^2.3.0",
+    "@jsquash/png": "^3.1.1",
     "@jsquash/webp": "^1.5.0",
     "exifr": "^7.1.3",
     "picomatch": "^4.0.7"

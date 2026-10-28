@@ -358,7 +358,7 @@ try {
     await name(filename).waitFor({ state: 'visible' })
     await page.bringToFront()
     await name(filename).click({ button: 'right' })
-    if (filename === 'logo.svg') { assert.equal(await page.getByRole('menuitem', { name: 'Compress Image', exact: true }).count(), 0, 'the SVG context menu belongs to the clicked SVG, even while a PNG is selected') }
+    if (filename === 'logo.svg') { assert.equal(await page.getByRole('menuitem', { name: 'Compress / Convert Images…', exact: true }).count(), 0, 'the SVG context menu belongs to the clicked SVG, even while a PNG is selected') }
     await page.getByRole('menuitem', { name: 'Copy Image', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Copy Image', exact: true }).waitFor({ state: 'hidden' })
     const relativePath = filename === 'hero.png' ? 'assets/images/hero.png' : 'assets/logo.svg'
@@ -386,7 +386,7 @@ try {
   clipboardSaved = false
   console.log('Copy UI passed: context menu paths for files and folders, PNG image content, SVG transparency, success notifications and ordinary file opening in both click modes.')
   await name('hero.png').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: /Compress Image/ }).waitFor({ state: 'visible' })
+  await page.getByRole('menuitem', { name: /Compress \/ Convert Images/ }).waitFor({ state: 'visible' })
   await page.getByRole('menuitem', { name: /Reveal in Explorer/ }).waitFor({ state: 'visible' })
   const menuItems = page.getByRole('menuitem')
   assert.ok((await menuItems.allTextContents()).every(label => !label.includes('Asset Meter:')), 'context menu labels omit the extension prefix')
