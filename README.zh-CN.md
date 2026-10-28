@@ -60,7 +60,7 @@ Metadata 通过 `exifr` 在独立 Worker 中按需异步解析，不阻塞体积
 
 面板工具栏提供 **刷新、全部折叠、设置**。文件保存、创建、删除、重命名和规则变更会自动刷新。右键资源可在原 Explorer 中定位、诊断匹配规则；macOS 本地工作区还可选择 **Reveal in Finder**，打开所在目录并选中资源。JPEG / PNG / WebP 可直接进入现有压缩流程。没有匹配项时提供设置入口。
 
-双击 Asset Meter 面板中的文件可复制内容，复制成功后显示提示。`assetMeter.copyType` 默认为 `"relative"`，复制相对于该文件所属工作区目录的路径；设为 `"absolute"` 则复制完整文件路径；选择 **Image**（`"image"`）则复制图片本身，可直接粘贴到支持图片的应用。复制图片时会短暂打开复制标签页，写入剪贴板成功后自动关闭。支持 JPEG、PNG、GIF、WebP、AVIF、SVG、ICO 和 BMP，统一转为 PNG 并保留透明度，动图复制其中一帧。非支持文件会提示错误，剪贴板保持不变。配置修改后立即生效。在默认的单击打开模式下，单击仍可打开预览。
+Asset Meter 面板的资源右键菜单提供独立的复制分组：**Copy Relative Path** 复制相对于该资源所属工作区目录的路径，**Copy Absolute Path** 复制完整文件路径；文件和目录均支持。JPEG、PNG、GIF、WebP、AVIF、SVG、ICO 和 BMP 还提供 **Copy Image**，将图片本身转为 PNG 复制，保留透明度，动图复制其中一帧，可直接粘贴到支持图片的应用。复制图片时会短暂打开复制标签页，写入剪贴板成功后自动关闭。复制成功后显示提示，失败时显示错误。文件打开遵循 VS Code 的单击或双击打开设置。
 
 点击原生 Explorer 或 Asset Meter 面板中的 SVG，默认左侧打开可编辑源码、右侧显示图像预览。预览随未保存的代码修改实时更新，切换 SVG 时复用同一个预览窗格。设置中的 **Asset Meter: Svg Open Mode** 提供 **Both**（默认）、**Image**、**Code**：Image 仅显示预览，Code 仅显示源码。差异编辑器中的 SVG 不会触发预览。
 
@@ -97,7 +97,6 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 {
   "assetMeter.displayMode": "always",
   "assetMeter.svgOpenMode": "both",
-  "assetMeter.copyType": "relative",
   "assetMeter.include": ["**/*.{jpg,jpeg,png,svg,webp,woff2}", "**/{assets,public,images,fonts}"],
   "assetMeter.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
   "assetMeter.showFileCount": true,
@@ -115,7 +114,6 @@ API 调用失败会提示错误，原文件保持不变。**Compress Again** 失
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
 | `assetMeter.enabled` | `true` | 启用体积计算和装饰。 |
-| `assetMeter.copyType` | `"relative"` | 双击 Asset Meter 面板文件时复制的内容：`"relative"` 为工作区相对路径，`"absolute"` 为完整文件路径，**Image**（`"image"`）为图片本身。复制成功后显示提示。 |
 | `assetMeter.svgOpenMode` | `"both"` | **Both**：源码与实时图像预览并排显示；**Image**（`"image"`）：仅预览；**Code**（`"code"`）：仅源码。适用于原生 Explorer 和 Asset Meter 面板。 |
 | `assetMeter.displayMode` | `"always"` | 常驻显示右侧标签；未安装补丁时显示短徽标或 `ⓘ`。`"hover"` 仅在鼠标移到该行时显示完整数量和大小，需补丁；未安装时仍可查看悬停提示。 |
 | `assetMeter.include` | 常见资源格式和目录 | 选择文件和文件夹的工作区相对 glob，支持 `**`、`*`、花括号、extglob 和否定模式；`"**/*"` 匹配全部资源，`[]` 关闭装饰。不限制目录总量。 |

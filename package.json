@@ -79,6 +79,24 @@
     ],
     "commands": [
       {
+        "command": "assetMeter.copyRelativePath",
+        "title": "Copy Relative Path",
+        "category": "Asset Meter",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "assetMeter.copyAbsolutePath",
+        "title": "Copy Absolute Path",
+        "category": "Asset Meter",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "assetMeter.copyImage",
+        "title": "Copy Image",
+        "category": "Asset Meter",
+        "icon": "$(copy)"
+      },
+      {
         "command": "assetMeter.previewImage",
         "title": "Open Image Details",
         "category": "Asset Meter",
@@ -164,7 +182,7 @@
       "view/item/context": [
         {
           "command": "assetMeter.previewImage",
-          "when": "view == assetMeter.explorer && viewItem =~ /^assetMeter\\.(image|previewImage)$/",
+          "when": "view == assetMeter.explorer && viewItem =~ /^assetMeter\\.(image|copyableImage|previewImage)$/",
           "group": "assetMeter@0"
         },
         {
@@ -188,12 +206,39 @@
           "group": "assetMeter@2"
         },
         {
+          "command": "assetMeter.copyRelativePath",
+          "when": "view == assetMeter.explorer",
+          "group": "copy@1"
+        },
+        {
+          "command": "assetMeter.copyAbsolutePath",
+          "when": "view == assetMeter.explorer",
+          "group": "copy@2"
+        },
+        {
+          "command": "assetMeter.copyImage",
+          "when": "view == assetMeter.explorer && viewItem =~ /^assetMeter\\.(image|copyableImage)$/",
+          "group": "copy@3"
+        },
+        {
           "command": "assetMeter.deleteResource",
           "when": "view == assetMeter.explorer && viewItem != assetMeter.workspaceRoot",
           "group": "z_delete@1"
         }
       ],
       "commandPalette": [
+        {
+          "command": "assetMeter.copyRelativePath",
+          "when": "false"
+        },
+        {
+          "command": "assetMeter.copyAbsolutePath",
+          "when": "false"
+        },
+        {
+          "command": "assetMeter.copyImage",
+          "when": "false"
+        },
         {
           "command": "assetMeter.revealInExplorer",
           "when": "false"
@@ -289,27 +334,6 @@
           "default": "always",
           "scope": "resource",
           "description": "Choose when size information is shown."
-        },
-        "assetMeter.copyType": {
-          "type": "string",
-          "enum": [
-            "relative",
-            "absolute",
-            "image"
-          ],
-          "enumItemLabels": [
-            "Relative Path",
-            "Absolute Path",
-            "Image"
-          ],
-          "enumDescriptions": [
-            "Copy the path relative to the file's workspace folder.",
-            "Copy the full filesystem path.",
-            "Copy the image itself as PNG, ready to paste into apps that accept images. Supports JPEG, PNG, GIF, WebP, AVIF, SVG, ICO and BMP; animated images copy the current frame. Other files show an error."
-          ],
-          "default": "relative",
-          "scope": "resource",
-          "description": "Choose what to copy when double-clicking a file in the Asset Meter view: a relative path, an absolute path or the image itself. A notification appears after copying."
         },
         "assetMeter.svgOpenMode": {
           "type": "string",

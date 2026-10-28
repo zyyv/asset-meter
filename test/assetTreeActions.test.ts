@@ -2,22 +2,17 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { AssetTreeActions } from '../src/assetTreeActions'
 import { ImageClipboard } from '../src/imageClipboard'
-
-const state = vi.hoisted(() => ({
-  copyType: 'relative',
-  openMode: 'singleClick',
-}))
+import { registerResourceActions } from '../src/resourceActions'
 
 vi.mock('vscode', () => ({
+  Disposable: { from: (...subscriptions: vscode.Disposable[]) => ({ dispose: () => subscriptions.forEach(subscription => subscription.dispose()) }) },
   workspace: {
-    getConfiguration: vi.fn((section: string) => ({
-      get: (key: string, fallback: unknown) => section === 'workbench' && key === 'list.openMode'
-        ? state.openMode
-        : key === 'copyType' ? state.copyType : fallback,
-    })),
     asRelativePath: vi.fn((uri: vscode.Uri) => uri.path.replace(/^\/workspace\//, '')),
   },
-  commands: { executeCommand: vi.fn().mockResolvedValue(undefined) },
+  commands: {
+    executeCommand: vi.fn().mockResolvedValue(undefined),
+    registerCommand: vi.fn(() => ({ dispose: vi.fn() })),
+  },
   env: { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } },
   window: {
     showInformationMessage: vi.fn().mockResolvedValue(undefined),
@@ -29,82 +24,62 @@ function file(path = '/workspace/assets/hero image.png'): vscode.Uri {
   return { path, fsPath: path, toString: () => `file://${path}` } as vscode.Uri
 }
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  vi.useFakeTimers()
-  state.copyType = 'relative'
-  state.openMode = 'singleClick'
-})
+beforeEach(() => { vi.clearAllMocks() })
+afterEach(() => { vi.restoreAllMocks() })
 
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
-
-it('previews on single-click and copies a relative path once on double-click', async () => {
+it('opens files without copying on repeated open commands', async () => {
+  const copyImage = vi.spyOn(ImageClipboard.prototype, 'copy')
   const actions = new AssetTreeActions()
   const uri = file()
   await actions.open(uri)
-  expect(vscode.commands.executeCommand).toHaveBeenCalledWith('vscode.open', uri, { preview: true, preserveFocus: true })
-  expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
-  await vi.advanceTimersByTimeAsync(100)
   await actions.open(uri)
+  expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(2)
+  expect(vscode.commands.executeCommand).toHaveBeenLastCalledWith('vscode.open', uri, { preview: true, preserveFocus: true })
+  expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
+  expect(copyImage).not.toHaveBeenCalled()
+})
+
+it('opens SVGs immediately through the existing SVG opener without copying', async () => {
+  const copyImage = vi.spyOn(ImageClipboard.prototype, 'copy')
+  const actions = new AssetTreeActions()
+  const uri = file('/workspace/assets/logo.SVG')
+  const opening = actions.open(uri)
+  expect(vscode.commands.executeCommand).toHaveBeenCalledExactlyOnceWith('assetMeter.openSvg', uri)
+  await opening
+  await actions.open(uri)
+  expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(2)
+  expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
+  expect(copyImage).not.toHaveBeenCalled()
+})
+
+it('reports file-open failures without writing to the clipboard', async () => {
+  vi.mocked(vscode.commands.executeCommand).mockRejectedValueOnce(new Error('File unavailable'))
+  await new AssetTreeActions().open(file())
+  expect(vscode.window.showErrorMessage).toHaveBeenCalledExactlyOnceWith('Asset Meter could not open the file: File unavailable')
+  expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
+})
+
+it('copies a workspace-relative path without opening an editor', async () => {
+  const uri = file()
+  await new AssetTreeActions().copy(uri, 'relative')
   expect(vscode.env.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('assets/hero image.png')
   expect(vscode.workspace.asRelativePath).toHaveBeenCalledWith(uri, false)
   expect(vscode.window.showInformationMessage).toHaveBeenCalledExactlyOnceWith('Asset Meter: Copied path: assets/hero image.png')
-  expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1)
-  await actions.open(uri)
-  expect(vscode.env.clipboard.writeText).toHaveBeenCalledTimes(1)
+  expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
 })
 
-it('uses the current resource-scoped setting for absolute paths', async () => {
-  const actions = new AssetTreeActions()
+it('copies an absolute path without opening an editor or resolving a relative path', async () => {
   const uri = file()
-  await actions.open(uri)
-  state.copyType = 'absolute'
-  await actions.open(uri)
-  expect(vscode.workspace.getConfiguration).toHaveBeenCalledWith('assetMeter', uri)
+  await new AssetTreeActions().copy(uri, 'absolute')
   expect(vscode.env.clipboard.writeText).toHaveBeenCalledExactlyOnceWith(uri.fsPath)
   expect(vscode.workspace.asRelativePath).not.toHaveBeenCalled()
-})
-
-it('does not copy when opening different files, after the click interval or after selection resets', async () => {
-  const actions = new AssetTreeActions()
-  await actions.open(file())
-  await actions.open(file('/workspace/assets/other.png'))
-  await actions.open(file())
-  await vi.advanceTimersByTimeAsync(500)
-  await actions.open(file())
-  actions.reset()
-  await actions.open(file())
-  expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
-})
-
-it('copies when VS Code invokes the command once in double-click opening mode', async () => {
-  state.openMode = 'doubleClick'
-  const actions = new AssetTreeActions()
-  await actions.open(file())
-  expect(vscode.env.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('assets/hero image.png')
   expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
-})
-
-it('preserves the SVG opener on single-click and copies SVG paths on double-click', async () => {
-  const actions = new AssetTreeActions()
-  const uri = file('/workspace/assets/logo.SVG')
-  await actions.open(uri)
-  expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
-  await vi.advanceTimersByTimeAsync(500)
-  expect(vscode.commands.executeCommand).toHaveBeenCalledExactlyOnceWith('assetMeter.openSvg', uri)
-  await actions.open(uri)
-  await vi.advanceTimersByTimeAsync(100)
-  await actions.open(uri)
-  expect(vscode.env.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('assets/logo.SVG')
-  await vi.advanceTimersByTimeAsync(500)
-  expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1)
 })
 
 it('shows success only after the clipboard write completes', async () => {
   let finish!: () => void
   vi.mocked(vscode.env.clipboard.writeText).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
-  state.openMode = 'doubleClick'
-  const copying = new AssetTreeActions().open(file())
+  const copying = new AssetTreeActions().copy(file(), 'relative')
   expect(vscode.window.showInformationMessage).not.toHaveBeenCalled()
   finish()
   await copying
@@ -113,84 +88,59 @@ it('shows success only after the clipboard write completes', async () => {
 
 it('reports clipboard failure without a success notification and allows retrying', async () => {
   vi.mocked(vscode.env.clipboard.writeText).mockRejectedValueOnce(new Error('Clipboard unavailable'))
-  state.openMode = 'doubleClick'
   const actions = new AssetTreeActions()
-  await actions.open(file())
+  await actions.copy(file(), 'relative')
   expect(vscode.window.showInformationMessage).not.toHaveBeenCalled()
   expect(vscode.window.showErrorMessage).toHaveBeenCalledExactlyOnceWith('Asset Meter could not copy the path: Clipboard unavailable')
-  await actions.open(file())
+  await actions.copy(file(), 'relative')
   expect(vscode.window.showInformationMessage).toHaveBeenCalledTimes(1)
 })
 
-it('copies image content instead of path text and waits for the image clipboard to finish', async () => {
+it('copies image content without opening a competing preview and waits for the clipboard to finish', async () => {
   let finish!: () => void
   const copyImage = vi.spyOn(ImageClipboard.prototype, 'copy').mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
-  state.copyType = 'image'
-  state.openMode = 'doubleClick'
-  const uri = file()
-  const copying = new AssetTreeActions().open(uri)
+  const uri = file('/workspace/assets/logo.svg')
+  const copying = new AssetTreeActions().copy(uri, 'image')
   expect(copyImage).toHaveBeenCalledExactlyOnceWith(uri)
   expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
+  expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
   expect(vscode.window.showInformationMessage).not.toHaveBeenCalled()
   finish()
   await copying
-  expect(vscode.window.showInformationMessage).toHaveBeenCalledExactlyOnceWith('Asset Meter: Copied image: assets/hero image.png')
+  expect(vscode.window.showInformationMessage).toHaveBeenCalledExactlyOnceWith('Asset Meter: Copied image: assets/logo.svg')
 })
 
 it('reports image-copy failures without a success message or overwriting the clipboard with a path', async () => {
   vi.spyOn(ImageClipboard.prototype, 'copy').mockRejectedValueOnce(new Error('Clipboard permission denied'))
-  state.copyType = 'image'
-  state.openMode = 'doubleClick'
-  await new AssetTreeActions().open(file())
+  await new AssetTreeActions().copy(file(), 'image')
   expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
   expect(vscode.window.showInformationMessage).not.toHaveBeenCalled()
   expect(vscode.window.showErrorMessage).toHaveBeenCalledExactlyOnceWith('Asset Meter could not copy the image: Clipboard permission denied')
 })
 
-it('rejects non-images in image mode without changing the clipboard', async () => {
-  state.copyType = 'image'
-  state.openMode = 'doubleClick'
-  await new AssetTreeActions().open(file('/workspace/assets/video.mp4'))
+it('rejects unsupported image files without changing the clipboard', async () => {
+  await new AssetTreeActions().copy(file('/workspace/assets/video.mp4'), 'image')
   expect(vscode.env.clipboard.writeText).not.toHaveBeenCalled()
   expect(vscode.window.showInformationMessage).not.toHaveBeenCalled()
   expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining('Image copy requires a JPEG'))
 })
 
-it('copies a double-clicked SVG without starting a competing preview', async () => {
-  const copyImage = vi.spyOn(ImageClipboard.prototype, 'copy').mockResolvedValueOnce(undefined)
-  state.copyType = 'image'
-  const actions = new AssetTreeActions()
-  const uri = file('/workspace/assets/logo.svg')
-  await actions.open(uri)
-  actions.select(uri)
-  await vi.advanceTimersByTimeAsync(100)
-  await actions.open(uri)
-  await vi.advanceTimersByTimeAsync(500)
-  expect(copyImage).toHaveBeenCalledExactlyOnceWith(uri)
-  expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
-})
-
-it('keeps a first click when its selection event arrives later, while clearing it for other files', async () => {
-  const actions = new AssetTreeActions()
+it.each(['copyRelativePath', 'copyAbsolutePath', 'copyImage'] as const)('passes the clicked resource to %s for tree nodes and URI arguments', async (action) => {
+  const copy = vi.fn()
+  const subscription = registerResourceActions({
+    openSvg: vi.fn(),
+    previewImage: vi.fn(),
+    compressImage: vi.fn(),
+    copyRelativePath: copy,
+    copyAbsolutePath: copy,
+    copyImage: copy,
+    deleteResource: vi.fn(),
+  })
+  const callback = vi.mocked(vscode.commands.registerCommand).mock.calls.find(([command]) => command === `assetMeter.${action}`)![1]
   const uri = file()
-  await actions.open(uri)
-  actions.select(uri)
-  await actions.open(uri)
-  expect(vscode.env.clipboard.writeText).toHaveBeenCalledExactlyOnceWith('assets/hero image.png')
-  await actions.open(uri)
-  actions.select(file('/workspace/assets/other.png'))
-  await actions.open(uri)
-  expect(vscode.env.clipboard.writeText).toHaveBeenCalledTimes(1)
-})
-
-it('cancels a pending SVG preview when the selection changes or the extension deactivates', async () => {
-  const actions = new AssetTreeActions()
-  await actions.open(file('/workspace/assets/logo.svg'))
-  actions.reset()
-  await vi.advanceTimersByTimeAsync(500)
+  callback({ uri })
+  callback(uri)
+  expect(copy.mock.calls).toEqual([[uri], [uri]])
   expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
-  await actions.open(file('/workspace/assets/logo.svg'))
-  actions.dispose()
-  await vi.advanceTimersByTimeAsync(500)
-  expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
+  subscription.dispose()
 })

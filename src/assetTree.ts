@@ -8,6 +8,7 @@ import { Limiter } from './core/limiter'
 import { ScanCancelled } from './core/scanner'
 import { sizeSeverity } from './core/severity'
 import { isSameOrChild } from './core/uri'
+import { canCopyImage } from './imageClipboard'
 import { silentLogger } from './log'
 import { isPreviewImage, supportsMetadata } from './metadata/formats'
 import { hasMetadata } from './metadata/normalize'
@@ -82,9 +83,17 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<AssetTreeNode>
     // size decoration badge alongside this view's full description.
     item.resourceUri = element.uri.with({ scheme: 'asset-meter-tree' })
     item.iconPath = element.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File
-    item.contextValue = element.workspaceRoot ? 'assetMeter.workspaceRoot' : element.isDirectory ? 'assetMeter.folder' : imageFormat(element.uri.path) ? 'assetMeter.image' : isPreviewImage(element.uri.path) ? 'assetMeter.previewImage' : 'assetMeter.file'
+    item.contextValue = element.workspaceRoot
+      ? 'assetMeter.workspaceRoot'
+      : element.isDirectory
+        ? 'assetMeter.folder'
+        : imageFormat(element.uri.path)
+          ? 'assetMeter.image'
+          : canCopyImage(element.uri.path)
+            ? 'assetMeter.copyableImage'
+            : isPreviewImage(element.uri.path) ? 'assetMeter.previewImage' : 'assetMeter.file'
     if (!element.isDirectory) {
-      item.command = { command: 'assetMeter.openFile', title: 'Open File / Double-click to Copy', arguments: [element.uri] }
+      item.command = { command: 'assetMeter.openFile', title: 'Open File', arguments: [element.uri] }
     }
     try {
       const metrics = await this.service.measure(element.uri)

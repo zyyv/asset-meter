@@ -410,6 +410,32 @@ it('asset tree shows the same full metrics, preserves theme icons and opens actu
   finally { decorations.dispose(); tree.dispose(); service.dispose() }
 })
 
+it.each([
+  ['photo.JPG', 'assetMeter.image'],
+  ['photo.jpeg', 'assetMeter.image'],
+  ['photo.jpe', 'assetMeter.image'],
+  ['photo.png', 'assetMeter.image'],
+  ['photo.webp', 'assetMeter.image'],
+  ['photo.gif', 'assetMeter.copyableImage'],
+  ['photo.avif', 'assetMeter.copyableImage'],
+  ['photo.SVG', 'assetMeter.copyableImage'],
+  ['photo.ico', 'assetMeter.copyableImage'],
+  ['photo.bmp', 'assetMeter.copyableImage'],
+  ['photo.heic', 'assetMeter.previewImage'],
+  ['photo.tiff', 'assetMeter.previewImage'],
+  ['video.mp4', 'assetMeter.file'],
+])('asset tree identifies copyable images for context menus independently of the active editor (%s)', async (name, contextValue) => {
+  const uri = vscode.Uri.joinPath(assets, name)
+  state.entries.set(uri.toString(), { type: vscode.FileType.File, size: 10 })
+  const service = new SizeService()
+  const tree = new AssetTreeProvider(service)
+  try {
+    const item = await tree.getTreeItem({ uri, name, isDirectory: false, hasChildren: false })
+    assert.equal(item.contextValue, contextValue)
+  }
+  finally { tree.dispose(); service.dispose() }
+})
+
 it('defaults every non-empty asset folder to expanded, including nested descendants', async () => {
   const images = vscode.Uri.joinPath(assets, 'images')
   const nested = vscode.Uri.joinPath(images, 'nested')

@@ -67,7 +67,6 @@ try {
       context.subscriptions.push(vscode.commands.registerCommand('assetMeterTest.reportClipboard', async () => {
         await require('node:fs/promises').writeFile(${JSON.stringify(clipboardReport)}, JSON.stringify({
           text: await vscode.env.clipboard.readText(),
-          type: vscode.workspace.getConfiguration('assetMeter').get('copyType'),
           openMode: vscode.workspace.getConfiguration('workbench').get('list.openMode'),
         }))
       }))
@@ -153,8 +152,15 @@ try {
   page = await waitFor(async () => browser.contexts()[0]?.pages().find(candidate => /workbench.*html/.test(candidate.url())))
   const prefix = process.platform === 'darwin' ? 'Meta' : 'Control'
   command = async (title) => {
-    await page.keyboard.press('F1')
+    await page.bringToFront()
     const input = page.locator('.quick-input-widget input').first()
+    // Context menus and image webviews can restore focus after a command.
+    // Wait for the palette to stay visible before entering its command.
+    await waitFor(async () => {
+      if (!await input.isVisible()) { await page.keyboard.press('F1') }
+      await input.waitFor({ state: 'visible', timeout: 1000 })
+      return true
+    })
     await input.fill(`>${title}`)
     await page.locator('.quick-input-list .monaco-list-row').filter({ hasText: title }).first().click()
     await input.waitFor({ state: 'hidden' })
@@ -319,40 +325,42 @@ try {
   clipboardSaved = true
   await name('hero.png').click()
   assert.equal((await reportClipboard()).text, originalClipboard, 'single-click does not change the clipboard')
-  const checkCopy = async (expected) => {
+  await name('hero.png').dblclick()
+  await page.locator('.editor-group-container .tab').filter({ hasText: 'hero.png' }).waitFor({ state: 'visible' })
+  assert.equal((await reportClipboard()).text, originalClipboard, 'double-click opens the file without changing the clipboard')
+  const checkCopy = async (label, expected, filename = 'hero.png') => {
     await expand('assets')
     await expand('images')
-    await name('hero.png').waitFor({ state: 'visible' })
-    await delay(550)
-    await name('hero.png').dblclick()
+    await name(filename).click({ button: 'right' })
+    if (filename === 'assets') { assert.equal(await page.getByRole('menuitem', { name: /^Copy Image$/ }).count(), 0, 'folders do not offer image copying') }
+    await page.getByRole('menuitem', { name: label, exact: true }).click()
+    await page.getByRole('menuitem', { name: label, exact: true }).waitFor({ state: 'hidden' })
     await page.locator('.notifications-toasts').getByText(`Asset Meter: Copied path: ${expected}`, { exact: true }).waitFor({ state: 'visible' })
     assert.equal((await reportClipboard()).text, expected, 'the clipboard contains the path shown in the success notification')
   }
-  await checkCopy('assets/images/hero.png')
-  settings['assetMeter.copyType'] = 'absolute'
-  await writeFile(settingsFile, JSON.stringify(settings))
-  await waitFor(async () => (await reportClipboard()).type === 'absolute')
-  await checkCopy(path.join(workspace, 'assets/images/hero.png'))
-  settings['assetMeter.copyType'] = 'relative'
+  await checkCopy('Copy Relative Path', 'assets/images/hero.png')
+  await checkCopy('Copy Absolute Path', path.join(workspace, 'assets/images/hero.png'))
+  await checkCopy('Copy Relative Path', 'assets', 'assets')
   settings['workbench.list.openMode'] = 'doubleClick'
   await writeFile(settingsFile, JSON.stringify(settings))
-  await waitFor(async () => {
-    const report = await reportClipboard()
-    return report.type === 'relative' && report.openMode === 'doubleClick'
-  })
-  await checkCopy('assets/images/hero.png')
+  await waitFor(async () => (await reportClipboard()).openMode === 'doubleClick')
+  await command('View: Close All Editors')
+  await name('hero.png').dblclick()
+  await page.locator('.editor-group-container .tab').filter({ hasText: 'hero.png' }).waitFor({ state: 'visible' })
+  assert.equal((await reportClipboard()).text, 'assets', 'double-click opening mode opens the file without copying')
+  await checkCopy('Copy Relative Path', 'assets/images/hero.png')
   settings['workbench.list.openMode'] = 'singleClick'
   await writeFile(settingsFile, JSON.stringify(settings))
   await waitFor(async () => (await reportClipboard()).openMode === 'singleClick')
-  settings['assetMeter.copyType'] = 'image'
-  await writeFile(settingsFile, JSON.stringify(settings))
-  await waitFor(async () => (await reportClipboard()).type === 'image')
   for (const [filename, width, height] of [['hero.png', 1, 1], ['logo.svg', 160, 160]]) {
     await expand('assets')
     if (filename === 'hero.png') { await expand('images') }
     await name(filename).waitFor({ state: 'visible' })
-    await delay(550)
-    await name(filename).dblclick()
+    await page.bringToFront()
+    await name(filename).click({ button: 'right' })
+    if (filename === 'logo.svg') { assert.equal(await page.getByRole('menuitem', { name: 'Compress Image', exact: true }).count(), 0, 'the SVG context menu belongs to the clicked SVG, even while a PNG is selected') }
+    await page.getByRole('menuitem', { name: 'Copy Image', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Copy Image', exact: true }).waitFor({ state: 'hidden' })
     const relativePath = filename === 'hero.png' ? 'assets/images/hero.png' : 'assets/logo.svg'
     await page.locator('.notifications-toasts').getByText(`Asset Meter: Copied image: ${relativePath}`, { exact: true }).waitFor({ state: 'visible' })
     assert.equal(await page.locator('.editor-group-container .tab').filter({ hasText: `Copy image: ${filename}` }).count(), 0, 'the temporary copying tab closes after success')
@@ -367,23 +375,25 @@ try {
     await target.click()
     await target.press(`${prefix}+V`)
     const image = await waitFor(async () => JSON.parse(await readFile(imageReport, 'utf8')))
+    await page.locator('.editor-group-container .tab').filter({ hasText: 'Test image paste' }).waitFor({ state: 'detached' })
     assert.equal(image.type, 'image/png', JSON.stringify(image))
     assert.equal(image.width, width)
     assert.equal(image.height, height)
     if (filename === 'logo.svg') { assert.equal(image.pixel[3], 0, 'SVG transparency survives copying') }
     console.log(`Image copy and paste passed: ${filename}, ${width} × ${height}.`)
   }
-  settings['assetMeter.copyType'] = 'relative'
-  await writeFile(settingsFile, JSON.stringify(settings))
-  await waitFor(async () => (await reportClipboard()).type === 'relative')
   await command('Asset Meter Test: Restore Clipboard')
   clipboardSaved = false
-  console.log('Copy UI passed: relative / absolute paths, image content pasted as PNG, SVG transparency, live settings, success notifications and double-click opening mode.')
+  console.log('Copy UI passed: context menu paths for files and folders, PNG image content, SVG transparency, success notifications and ordinary file opening in both click modes.')
   await name('hero.png').click({ button: 'right' })
   await page.getByRole('menuitem', { name: /Compress Image/ }).waitFor({ state: 'visible' })
   await page.getByRole('menuitem', { name: /Reveal in Explorer/ }).waitFor({ state: 'visible' })
   const menuItems = page.getByRole('menuitem')
   assert.ok((await menuItems.allTextContents()).every(label => !label.includes('Asset Meter:')), 'context menu labels omit the extension prefix')
+  const copyItems = menuItems.filter({ hasText: /^Copy (Relative Path|Absolute Path|Image)$/ })
+  assert.deepEqual((await copyItems.allTextContents()).map(label => label.trim()), ['Copy Relative Path', 'Copy Absolute Path', 'Copy Image'], 'copy actions appear together in order')
+  const copyGroup = await copyItems.first().evaluate(element => element.closest('.action-item').previousElementSibling?.classList.contains('disabled'))
+  assert.ok(copyGroup, 'copy actions start in a separate menu group')
   assert.equal((await menuItems.last().textContent()).trim(), 'Delete', 'Delete is the last context action')
   const deleteItem = page.getByRole('menuitem', { name: /^Delete$/ })
   const separateGroup = await deleteItem.evaluate(element => element.closest('.action-item').previousElementSibling?.classList.contains('disabled'))
@@ -573,6 +583,8 @@ catch (error) {
   await mkdir(path.join(root, 'artifacts'), { recursive: true })
   if (page) {
     await page.screenshot({ path: path.join(root, 'artifacts/asset-tree-ui-failure.png') }).catch(() => {})
+    console.error('Notifications:', await page.locator('.notifications-toasts').allTextContents().catch(() => []))
+    console.error('Editor tabs:', await page.locator('.editor-group-container .tab').allTextContents().catch(() => []))
     console.error(await page.locator('.part.sidebar .pane-header, .part.sidebar .label-name, .part.sidebar .welcome').allTextContents().catch(() => []))
     console.error('Editor text:', await page.locator('.editor-group-container .view-lines').allTextContents().catch(() => []))
     for (const frame of page.frames()) {

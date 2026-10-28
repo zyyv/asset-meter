@@ -102,14 +102,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     compression,
     svgPreview,
     imageClipboard,
-    assetActions,
-    assetView.onDidChangeSelection(event => assetActions.select(event.selection[0]?.uri)),
-    assetView.onDidChangeVisibility(() => assetActions.reset()),
     vscode.commands.registerCommand('assetMeter.openFile', (uri: vscode.Uri) => assetActions.open(uri)),
     registerResourceActions({
       openSvg: uri => svgPreview.open(uri),
       previewImage: uri => imageDetails.open(uri),
       compressImage: uri => compression.compress(uri),
+      copyRelativePath: uri => uri && assetActions.copy(uri, 'relative'),
+      copyAbsolutePath: uri => uri && assetActions.copy(uri, 'absolute'),
+      copyImage: uri => uri && assetActions.copy(uri, 'image'),
       deleteResource: uri => deleteResource(uri, deleted => refresh([deleted]), output),
     }),
     vscode.window.registerFileDecorationProvider(decorations),
@@ -119,7 +119,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<AssetM
     vscode.workspace.onDidDeleteFiles((event) => { event.files.forEach(queue) }),
     vscode.workspace.onDidRenameFiles((event) => { event.files.forEach((file) => { queue(file.oldUri); queue(file.newUri) }) }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('workbench.list.openMode') || event.affectsConfiguration('assetMeter.copyType')) { assetActions.reset() }
       if (event.affectsConfiguration('assetMeter') || event.affectsConfiguration('explorer.decorations')) {
         service.invalidate(undefined, true)
         for (const folder of vscode.workspace.workspaceFolders ?? []) { service.settings(folder.uri) }

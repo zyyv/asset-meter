@@ -2,14 +2,18 @@ import { randomBytes } from 'node:crypto'
 import { posix } from 'node:path'
 import * as vscode from 'vscode'
 
+export function canCopyImage(path: string): boolean {
+  return /\.(?:jpe?g|jpe|png|gif|webp|avif|svg|ico|bmp)$/i.test(path)
+}
+
 export class ImageClipboard implements vscode.Disposable {
   private readonly pending = new Set<() => void>()
   private disposed = false
 
   async copy(uri: vscode.Uri): Promise<void> {
     if (this.disposed) { throw new Error('Image clipboard has been disposed.') }
-    if (!/\.(?:jpe?g|jpe|png|gif|webp|avif|svg|ico|bmp)$/i.test(uri.path)) {
-      throw new Error('Image copy requires a JPEG, PNG, GIF, WebP, AVIF, SVG, ICO or BMP file. Choose Relative Path or Absolute Path to copy other files.')
+    if (!canCopyImage(uri.path)) {
+      throw new Error('Image copy requires a JPEG, PNG, GIF, WebP, AVIF, SVG, ICO or BMP file. Choose Copy Relative Path or Copy Absolute Path to copy other files.')
     }
     const panel = vscode.window.createWebviewPanel('assetMeter.copyImage', `Copy image: ${posix.basename(uri.path)}`, vscode.ViewColumn.Active, {
       enableScripts: true,
@@ -33,7 +37,7 @@ export class ImageClipboard implements vscode.Disposable {
         else { resolve() }
       }
       cancel = () => finish(new Error('Image copy cancelled.'))
-      timer = setTimeout(() => finish(new Error('Image copy timed out. Try double-clicking the image again.')), 30_000)
+      timer = setTimeout(() => finish(new Error('Image copy timed out. Try Copy Image again from the context menu.')), 30_000)
       this.pending.add(cancel)
       subscriptions.push(
         panel.onDidDispose(cancel),

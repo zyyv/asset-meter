@@ -60,7 +60,7 @@ For module responsibilities and extension points, see the [Metadata module notes
 
 Use **Refresh**, **Collapse All** and **Settings** in the view toolbar. Saves, creates, deletes, renames and rule changes refresh it automatically. Right-click a resource to reveal it in the original Explorer or diagnose matching. Local macOS workspaces also offer **Reveal in Finder**, opening the containing folder with the resource selected. JPEG / PNG / WebP images offer the existing compression workflow. An empty view links to matching settings.
 
-Double-click a file in the Asset Meter view to copy it and show a confirmation. `assetMeter.copyType` defaults to `"relative"` (relative to that file's workspace folder); choose `"absolute"` for the full filesystem path, or **Image** (`"image"`) to copy the image itself for pasting into other apps. Image copying briefly opens a copying tab and closes it after the clipboard write succeeds. JPEG, PNG, GIF, WebP, AVIF, SVG, ICO and BMP are copied as PNG, preserving transparency; animated images copy one frame. Unsupported files show an error and keep the clipboard unchanged. Changes apply immediately. Single-click previews remain available with the default single-click opening mode.
+Right-click a resource in the Asset Meter view to find a separate copy group: **Copy Relative Path** copies the path relative to its workspace folder, and **Copy Absolute Path** copies the full filesystem path. Both work for files and folders. JPEG, PNG, GIF, WebP, AVIF, SVG, ICO and BMP also offer **Copy Image**, copying the image as PNG for pasting into other apps, preserving transparency; animated images copy one frame. Image copying briefly opens a copying tab and closes it after the clipboard write succeeds. Successful copies show a confirmation; failures show an error. File opening follows VS Code's single-click or double-click opening setting.
 
 Click an SVG in Explorer or the Asset Meter view to open editable source on the left and an image preview on the right. The preview follows unsaved edits and reuses the same pane when switching SVGs. In Settings, **Asset Meter: Svg Open Mode** offers **Both** (default), **Image** and **Code**. Image shows the preview alone; Code uses the text editor alone. SVGs opened in a diff editor are left in the diff view.
 
@@ -97,7 +97,6 @@ Open **Settings → Extensions → Asset Meter**, or add this example to `.vscod
 {
   "assetMeter.displayMode": "always",
   "assetMeter.svgOpenMode": "both",
-  "assetMeter.copyType": "relative",
   "assetMeter.include": ["**/*.{jpg,jpeg,png,svg,webp,woff2}", "**/{assets,public,images,fonts}"],
   "assetMeter.exclude": ["**/.git/**", "**/node_modules/**", "**/.DS_Store"],
   "assetMeter.showFileCount": true,
@@ -115,7 +114,6 @@ Configured arrays **replace** the defaults. Matching uses [picomatch](https://gi
 | Setting | Default | Description |
 | --- | --- | --- |
 | `assetMeter.enabled` | `true` | Enable size calculations and decorations. |
-| `assetMeter.copyType` | `"relative"` | Double-click copy behavior in the Asset Meter view: `"relative"` for a workspace-relative path, `"absolute"` for the full path, or **Image** (`"image"`) for the image content. Shows a confirmation after copying. |
 | `assetMeter.svgOpenMode` | `"both"` | **Both**: editable source and live image preview side by side. **Image** (`"image"`): preview only. **Code** (`"code"`): source only. Applies to Explorer and the Asset Meter view. |
 | `assetMeter.displayMode` | `"always"` | Keep labels visible, with compact badges or `ⓘ` without the patch. `"hover"` shows full counts and sizes on row hover with the patch, or tooltips without it. |
 | `assetMeter.include` | Common asset formats and folders | Workspace-relative glob patterns for files and folders; supports `**`, `*`, braces, extglobs and negated patterns. `"**/*"` matches all resources; `[]` hides decorations. Does not limit folder totals. |

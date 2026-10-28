@@ -13,6 +13,9 @@ interface ResourceActions {
   openSvg: (uri: vscode.Uri) => unknown
   previewImage: (uri?: vscode.Uri) => unknown
   compressImage: (uri?: vscode.Uri) => unknown
+  copyRelativePath: (uri?: vscode.Uri) => unknown
+  copyAbsolutePath: (uri?: vscode.Uri) => unknown
+  copyImage: (uri?: vscode.Uri) => unknown
   deleteResource: (uri?: vscode.Uri) => unknown
 }
 
@@ -21,6 +24,9 @@ export function registerResourceActions(actions: ResourceActions): vscode.Dispos
     vscode.commands.registerCommand('assetMeter.openSvg', (uri: vscode.Uri) => actions.openSvg(uri)),
     vscode.commands.registerCommand('assetMeter.previewImage', (resource?: AssetResource) => actions.previewImage(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.compressImage', (resource?: AssetResource) => actions.compressImage(assetResource(resource))),
+    vscode.commands.registerCommand('assetMeter.copyRelativePath', (resource?: AssetResource) => actions.copyRelativePath(assetResource(resource))),
+    vscode.commands.registerCommand('assetMeter.copyAbsolutePath', (resource?: AssetResource) => actions.copyAbsolutePath(assetResource(resource))),
+    vscode.commands.registerCommand('assetMeter.copyImage', (resource?: AssetResource) => actions.copyImage(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.deleteResource', (resource?: AssetResource) => actions.deleteResource(assetResource(resource))),
     vscode.commands.registerCommand('assetMeter.revealInExplorer', (resource?: AssetResource) => {
       const uri = assetResource(resource)
